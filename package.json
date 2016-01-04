@@ -1,0 +1,65 @@
+{
+  "name": "immigration",
+  "version": "0.0.0",
+  "description": "Simple, no-frills migration utility",
+  "main": "dist/index.js",
+  "bin": {
+    "immigration": "dist/bin.js"
+  },
+  "files": [
+    "dist/",
+    "typings.json",
+    "LICENSE"
+  ],
+  "scripts": {
+    "lint": "tslint \"src/**/*.ts\"",
+    "build": "rm -rf dist/ && tsc",
+    "test-spec": "blue-tape \"dist/**/*.spec.js\" | tap-spec",
+    "test-cov": "istanbul cover --print none -x \"*.spec.js\" blue-tape -- \"dist/**/*.spec.js\" | tap-spec",
+    "test": "npm run lint && npm run build && npm run test-cov",
+    "prepublish": "typings install && npm run build"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git://github.com/blakeembrey/node-immigration.git"
+  },
+  "keywords": [
+    "migrate",
+    "migration",
+    "database",
+    "deploy",
+    "update",
+    "script"
+  ],
+  "author": {
+    "name": "Blake Embrey",
+    "email": "hello@blakeembrey.com",
+    "url": "http://blakeembrey.me"
+  },
+  "license": "Apache-2.0",
+  "bugs": {
+    "url": "https://github.com/blakeembrey/node-immigration/issues"
+  },
+  "homepage": "https://github.com/blakeembrey/node-immigration",
+  "devDependencies": {
+    "blue-tape": "^0.1.10",
+    "istanbul": "^0.4.1",
+    "pre-commit": "^1.0.6",
+    "tap-spec": "^4.1.1",
+    "tslint": "^3.1.1",
+    "typescript": "^1.7.5",
+    "typings": "^0.4.1"
+  },
+  "dependencies": {
+    "arrify": "^1.0.1",
+    "bluebird": "^3.1.1",
+    "chalk": "^1.1.1",
+    "make-error-cause": "^1.0.2",
+    "minimist": "^1.2.0",
+    "native-or-bluebird": "^1.2.0",
+    "pad-left": "^2.0.0",
+    "thenify": "^3.1.1",
+    "touch": "^1.0.0",
+    "xtend": "^4.0.1"
+  }
+}

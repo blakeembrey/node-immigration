@@ -1,0 +1,19 @@
+{
+  "compilerOptions": {
+    "target": "es5",
+    "outDir": "dist/",
+    "module": "commonjs",
+    "noImplicitAny": true,
+    "removeComments": true,
+    "declaration": true,
+    "sourceMap": true,
+    "newLine": "LF",
+    "moduleResolution": "classic"
+  },
+  "files": [
+    "src/index.ts",
+    "src/index.spec.ts",
+    "src/bin.ts",
+    "typings/main.d.ts"
+  ]
+}
