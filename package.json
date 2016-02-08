@@ -51,12 +51,12 @@
     "typings": "^0.4.1"
   },
   "dependencies": {
+    "any-promise": "^1.1.0",
     "arrify": "^1.0.1",
     "bluebird": "^3.1.1",
     "chalk": "^1.1.1",
     "make-error-cause": "^1.0.2",
     "minimist": "^1.2.0",
-    "native-or-bluebird": "^1.2.0",
     "pad-left": "^2.0.0",
     "thenify": "^3.1.1",
     "touch": "^1.0.0",

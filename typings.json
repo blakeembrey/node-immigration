@@ -1,11 +1,11 @@
 {
   "dependencies": {
+    "any-promise": "github:typings/typed-any-promise#74ba6cf22149ff4de39c2338a9cb84f9ded6f042",
     "arrify": "github:typings/typed-arrify#32383d5fd3e6a8614abb6dba254a3aab07cd7424",
     "blue-tape": "github:typings/typed-blue-tape#a4e41a85d6f760e7c60088127968eae7d3a556fa",
     "chalk": "github:typings/typed-chalk#a7e422c5455e70292e5675a727d43a7b05fc3e58",
     "make-error-cause": "npm:make-error-cause",
     "minimist": "github:typings/typed-minimist#9bfb8ebb1cf82abe2e16b00d6e0f59492224728e",
-    "native-or-bluebird": "github:typings/typed-native-or-bluebird#2f6bf64abda66d137016576086e9e1c0dac45469",
     "pad-left": "github:typings/typed-pad-left#c457a581be16591c41280e8a42874a6b475bfe1e",
     "thenify": "github:typings/typed-thenify#b317b4b5dbcddf0cdf12c1fa005a577f089a7663",
     "touch": "github:typings/typed-touch#9b10d0473fb5161c379df57d63d3d59fb5b62fb0",

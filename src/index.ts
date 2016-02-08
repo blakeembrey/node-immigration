@@ -1,7 +1,7 @@
 import fs = require('fs')
 import thenify = require('thenify')
 import { resolve, join, extname, basename } from 'path'
-import Promise = require('native-or-bluebird')
+import Promise = require('any-promise')
 import tch = require('touch')
 import arrify = require('arrify')
 import { BaseError } from 'make-error-cause'
