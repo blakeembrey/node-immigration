@@ -41,6 +41,7 @@ Commands:
   up [name]       Migrate up
   down [name]     Migrate down
   create [title]  Create a new migration file
+  list            List available migrations
 `)
 
   process.exit(argv.help ? 0 : 1)

@@ -14,7 +14,7 @@ const readdir = thenify(fs.readdir)
 /**
  * Execute a migration.
  */
-function immigration (mode: string, name: string, options: immigration.Options = {}): Promise<boolean> {
+function immigration (cmd: string, name: string, options: immigration.Options = {}): Promise<boolean> {
   const dir = resolve(options.directory || 'migrations')
   const extensions = arrify(options.extension)
   const log = logger(options.log)
@@ -24,7 +24,7 @@ function immigration (mode: string, name: string, options: immigration.Options =
     extensions.push('.js')
   }
 
-  if (mode === 'create') {
+  if (cmd === 'create') {
     const date = new Date()
     const prefix = String(date.getUTCFullYear()) +
       pad(String(date.getUTCMonth() + 1), 2, '0') +
@@ -38,52 +38,31 @@ function immigration (mode: string, name: string, options: immigration.Options =
     return touch(join(dir, `${prefix}${suffix}${extension}`)).then(() => true)
   }
 
-  if (mode === 'up' || mode === 'down') {
+  if (cmd === 'list') {
+    return listFiles(dir, name, extensions, options)
+      .then(files => {
+        for (const file of files) {
+          log(`${chalk.cyan('•')} ${toName(file)}`)
+        }
+
+        return true
+      })
+  }
+
+  if (cmd === 'up' || cmd === 'down') {
     if (!options.count && !options.begin && !name && !options.all) {
-      const msg = 'Requires `count`, `begin`, `all`, or a specific migration name'
+      const msg = 'Requires `count`, `begin`, `all`, or a migration name'
+
       log('')
       log(`${chalk.red('⨯')} ${msg}`)
       log('')
+
       return Promise.reject(new ImmigrationError(msg))
     }
 
-    return readdir(dir)
-      // Filter by name and supported extensions.
-      .then(files => {
-        if (name) {
-          files = files.filter(filename => toName(filename) === name)
-        }
-
-        return files.filter(filename => extensions.indexOf(extname(filename)) > -1).sort()
-      })
-      // Support "count" option.
-      .then(files => {
-        if (options.count) {
-          return files.slice(-options.count)
-        }
-
-        return files
-      })
-      // Support "begin" option.
-      .then(files => {
-        if (options.begin) {
-          let begin = 0
-
-          for (const filename of files) {
-            if (toName(filename) === options.begin) {
-              break
-            }
-
-            begin++
-          }
-
-          return files.slice(begin)
-        }
-
-        return files
-      })
+    return listFiles(dir, name, extensions, options)
       // Reverse files when going "down".
-      .then(files => mode === 'up' ? files : files.reverse())
+      .then(files => cmd === 'up' ? files : files.reverse())
       // Execute the migrations.
       .then(files => {
         const migrations = files.map(x => join(dir, x))
@@ -99,7 +78,7 @@ function immigration (mode: string, name: string, options: immigration.Options =
             return p
               .then(() => {
                 const m = require(path)
-                const fn = m[mode]
+                const fn = m[cmd]
 
                 // Skip missing up/down methods.
                 if (fn == null) {
@@ -107,13 +86,13 @@ function immigration (mode: string, name: string, options: immigration.Options =
                 }
 
                 if (typeof fn !== 'function') {
-                  throw new ImmigrationError(`Migration ${mode} is not a function: ${name}`, null, path)
+                  throw new ImmigrationError(`Migration ${cmd} is not a function: ${name}`, null, path)
                 }
 
-                log(`${chalk.magenta(mode)} ${name}`)
+                log(`${chalk.magenta(cmd)} ${name}`)
 
                 return run(fn).catch(error => {
-                  throw new ImmigrationError(`Migration ${mode} failed on ${name}`, error, path)
+                  throw new ImmigrationError(`Migration ${cmd} failed on ${name}`, error, path)
                 })
               })
           },
@@ -139,7 +118,7 @@ function immigration (mode: string, name: string, options: immigration.Options =
       })
   }
 
-  return Promise.reject(new TypeError(`Unknown migration mode: ${mode}`))
+  return Promise.reject(new TypeError(`Unknown migration command: ${cmd}`))
 }
 
 /**
@@ -161,12 +140,56 @@ function toName (path: string): string {
   return basename(path).replace(/\.[^\.]+$/, '')
 }
 
+/**
+ * Logging function.
+ */
 function logger (shouldLog: boolean) {
   if (shouldLog) {
     return (msg: string) => console.error(msg)
   }
 
   return (msg: string): void => undefined
+}
+
+/**
+ * List available files.
+ */
+function listFiles (dir: string, name: string, extensions: string[], options: immigration.Options) {
+  return readdir(dir)
+    // Filter by name and supported extensions.
+    .then(files => {
+      if (name) {
+        files = files.filter(filename => toName(filename) === name)
+      }
+
+      return files.filter(filename => extensions.indexOf(extname(filename)) > -1).sort()
+    })
+    // Support "count" option.
+    .then(files => {
+      if (options.count) {
+        return files.slice(-options.count)
+      }
+
+      return files
+    })
+    // Support "begin" option.
+    .then(files => {
+      if (options.begin) {
+        let begin = 0
+
+        for (const filename of files) {
+          if (toName(filename) === options.begin) {
+            break
+          }
+
+          begin++
+        }
+
+        return files.slice(begin)
+      }
+
+      return files
+    })
 }
 
 /**
