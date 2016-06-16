@@ -31,6 +31,7 @@ Commands:
   up [name]       Migrate up
   down [name]     Migrate down
   create [title]  Create a new migration file
+  list            List available migrations
 ```
 
 Migrations can export two functions: `up` and `down`. These functions can accept a callback or return a promise for asynchronous actions, such as altering a database.
