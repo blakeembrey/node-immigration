@@ -7,8 +7,7 @@
     "minimist": "github:typings/typed-minimist#9bfb8ebb1cf82abe2e16b00d6e0f59492224728e",
     "pad-left": "github:typings/typed-pad-left#c457a581be16591c41280e8a42874a6b475bfe1e",
     "thenify": "github:typings/typed-thenify#b317b4b5dbcddf0cdf12c1fa005a577f089a7663",
-    "touch": "github:typings/typed-touch#9b10d0473fb5161c379df57d63d3d59fb5b62fb0",
-    "xtend": "github:typings/typed-xtend#63cccadf3295b3c15561ee45617ac006edcca9e0"
+    "touch": "github:typings/typed-touch#9b10d0473fb5161c379df57d63d3d59fb5b62fb0"
   },
   "globalDependencies": {
     "node": "github:DefinitelyTyped/DefinitelyTyped/node/node.d.ts#2b2353068b57c5f0e10439f5a7cbca5ae41aa3d5"

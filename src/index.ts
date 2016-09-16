@@ -33,7 +33,7 @@ function immigration (cmd: string, name: string, options: immigration.Options = 
       pad(String(date.getUTCMinutes()), 2, '0') +
       pad(String(date.getUTCSeconds()), 2, '0')
     const suffix = name ? `-${name}` : ''
-    const extension = extensions[0]
+    const extension = extensions[extensions.length - 1]
 
     return touch(join(dir, `${prefix}${suffix}${extension}`)).then(() => true)
   }
