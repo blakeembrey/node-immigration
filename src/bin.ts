@@ -2,6 +2,7 @@
 
 import minimist = require('minimist')
 import extend = require('xtend')
+import arrify = require('arrify')
 import immigration = require('./index')
 
 interface Argv {
@@ -47,7 +48,13 @@ Commands:
   process.exit(argv.help ? 0 : 1)
 }
 
-immigration(argv._[0], argv._[1], extend(argv, { log: true }))
+immigration(argv._[0], argv._[1], {
+  begin: arrify(argv.begin).pop(),
+  directory: arrify(argv.directory).pop(),
+  extension: arrify(argv.extension),
+  all: !!argv.all,
+  log: true
+})
   .then(
     () => process.exit(0),
     () => process.exit(1)
