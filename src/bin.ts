@@ -49,6 +49,7 @@ Commands:
 
 immigration(argv._[0], argv._[1], {
   begin: arrify(argv.begin).pop(),
+  count: Number(arrify(argv.count).pop()),
   directory: arrify(argv.directory).pop(),
   extension: arrify(argv.extension),
   all: !!argv.all,
