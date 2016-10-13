@@ -82,6 +82,7 @@ function immigration (cmd: string, name: string, options: immigration.Options = 
 
                 // Skip missing up/down methods.
                 if (fn == null) {
+                  log(`${chalk.magenta('skip')} ${name}`)
                   return
                 }
 
