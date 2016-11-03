@@ -3,17 +3,15 @@
     "target": "es5",
     "outDir": "dist/",
     "module": "commonjs",
+    "lib": ["es5"],
     "noImplicitAny": true,
+    "strictNullChecks": true,
+    "noImplicitReturns": true,
+    "noImplicitThis": true,
     "removeComments": true,
     "declaration": true,
     "sourceMap": true,
     "inlineSources": true,
     "newLine": "LF"
-  },
-  "files": [
-    "src/index.ts",
-    "src/index.spec.ts",
-    "src/bin.ts",
-    "typings/index.d.ts"
-  ]
+  }
 }

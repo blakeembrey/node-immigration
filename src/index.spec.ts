@@ -1,8 +1,8 @@
 import test = require('blue-tape')
-import immigration = require('./index')
 import { join } from 'path'
 import fs = require('fs')
 import thenify = require('thenify')
+import * as immigration from './index'
 
 const stat = thenify(fs.stat)
 const readdir = thenify(fs.readdir)
@@ -12,35 +12,70 @@ const DIRECTORY = join(__dirname, '../test/migrations')
 const SUCCESS_FILE = join(__dirname, '../test/.success')
 
 test('immigration', t => {
-  t.test('up', t => {
-    return immigration('up', null, {
-      all: true,
-      directory: DIRECTORY
-    })
-      .then(result => {
-        t.equal(result, true)
+  t.test('clean migration', t => {
+    const migrate = new immigration.Migrate()
 
-        return stat(SUCCESS_FILE)
+    t.test('up', t => {
+      return migrate.migrate('up', {
+        all: true,
+        directory: DIRECTORY
       })
-      .then(stats => stats.isFile())
+        .then(result => {
+          return stat(SUCCESS_FILE).then(stats => t.ok(stats.isFile()))
+        })
+    })
+
+    t.test('down', t => {
+      t.plan(1)
+
+      return migrate.migrate('down', {
+        all: true,
+        directory: DIRECTORY
+      })
+        .then(result => {
+          return stat(SUCCESS_FILE).catch(() => t.pass('file was removed'))
+        })
+    })
   })
 
-  t.test('down', t => {
-    t.plan(2)
+  t.test('fs migration', t => {
+    const plugin = immigration.createPlugin(
+      { _: ['../../fs'] },
+      DIRECTORY
+    )
 
-    return immigration('down', null, {
-      all: true,
-      directory: DIRECTORY
-    })
-      .then(result => {
-        t.equal(result, true)
+    const migrate = new immigration.Migrate(plugin)
 
-        return stat(SUCCESS_FILE).catch(() => t.pass('file was removed'))
+    t.test('up', t => {
+      return migrate.migrate('up', {
+        all: true,
+        directory: DIRECTORY
       })
+        .then(result => {
+          return stat(SUCCESS_FILE).then(stats => t.ok(stats.isFile()))
+        })
+    })
+
+    t.test('down', t => {
+      t.plan(1)
+
+      return migrate.migrate('down', {
+        all: true,
+        directory: DIRECTORY
+      })
+        .then(result => {
+          return stat(SUCCESS_FILE).catch(() => t.pass('file was removed'))
+        })
+    })
+
+    t.test('cleanup', t => {
+      return unlink(join(DIRECTORY, '.migrate.json'))
+    })
   })
 
   t.test('create', t => {
-    return immigration('create', 'foobar', {
+    return immigration.create({
+      name: 'foobar',
       directory: DIRECTORY
     })
       .then(result => {
@@ -48,9 +83,10 @@ test('immigration', t => {
       })
       .then(files => {
         const file = files[files.length - 1]
+
         t.equal(files.length, 2)
-        // YYYYMMDDHHMMSS
-        t.ok(/\d{14}\-foobar\.js/.test(file))
+        // `YYYYMMDDHHMMSS`.
+        t.ok(/\d{14}_foobar\.js/.test(file))
 
         return unlink(join(DIRECTORY, file))
       })

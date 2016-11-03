@@ -15,7 +15,7 @@ npm install -g immigration
 
 ## Usage
 
-Only three commands and various config options. Created to run migration scripts without any boilerplate.
+From `immigration --help`:
 
 ```
 immigration [command] [options]
@@ -26,26 +26,36 @@ Options:
   -c, --count [num]      The number of migrations to execute (default: all)
   -e, --extension [ext]  Supported file extensions (default: ".js")
   -a, --all              Explicitly execute all migrations (execute without count or begin)
+  -n, --new              Execute the new migrations (used for "up" migrations) *
+  -s, --since            Rollback migrations for duration (E.g. "30m") (used for "down" migrations) *
 
 Commands:
-  up [name]       Migrate up
-  down [name]     Migrate down
+  up [name]       Run up migration scripts
+  down [name]     Run down migration scripts
   create [title]  Create a new migration file
   list            List available migrations
+  executed        List the run migrations *
+  log [name]      Mark a migration as run (without explicitly executing up) *
+  unlog [name]    Remove a migration marked as run (without explicitly executing down) *
+  tidy            Unlog unknown migration names from the plugin *
+
+* Requires plugin (E.g. "--use [ immigration/fs ]")
 ```
 
 Migrations can export two functions: `up` and `down`. These functions can accept a callback or return a promise for asynchronous actions, such as altering a database.
+
+Plugins can be used with `immigration` for persistence of migration state. The built-in plugin is `fs`, but others can be added. The only requirement is that they export function called `init` which, when called, returns an object with `lock`, `unlock`, `log` and `unlog` functions.
 
 ### CLI
 
 ```
 immigration up -a
-immigration down -c 1
+immigration down -c1
 ```
 
 ## Attribution
 
-Loosely based on Rails and [node-migrate](https://github.com/tj/node-migrate), but purposely missing complexity that didn't work for my own deployments (E.g. writing to file for state).
+Loosely based on Rails and [node-migrate](https://github.com/tj/node-migrate), but I tried to keep the implementation simpler and more configurable.
 
 ## License
 

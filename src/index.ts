@@ -1,166 +1,248 @@
 import fs = require('fs')
+import ms = require('ms')
 import thenify = require('thenify')
+import { EventEmitter } from 'events'
 import { resolve, join, extname, basename } from 'path'
 import Promise = require('any-promise')
 import tch = require('touch')
 import arrify = require('arrify')
 import { BaseError } from 'make-error-cause'
 import pad = require('pad-left')
-import chalk = require('chalk')
+import resolveFrom = require('resolve-from')
+import promiseFinally from 'promise-finally'
 
 const touch = thenify(tch)
 const readdir = thenify(fs.readdir)
 
+export interface CreateOptions {
+  name?: string
+  directory?: string
+  extension?: string
+}
+
 /**
- * Execute a migration.
+ * Create a new migration file.
  */
-function immigration (cmd: string, name: string, options: immigration.Options = {}): Promise<boolean> {
+export function create (options: CreateOptions = {}): Promise<void> {
   const dir = resolve(options.directory || 'migrations')
-  const extensions = arrify(options.extension)
-  const log = logger(options.log)
+  const extension = options.extension || '.js'
 
-  // Use `.js` by default.
-  if (extensions.length === 0) {
-    extensions.push('.js')
+  const date = new Date()
+  const prefix = String(date.getUTCFullYear()) +
+    pad(String(date.getUTCMonth() + 1), 2, '0') +
+    pad(String(date.getUTCDate()), 2, '0') +
+    pad(String(date.getUTCHours()), 2, '0') +
+    pad(String(date.getUTCMinutes()), 2, '0') +
+    pad(String(date.getUTCSeconds()), 2, '0')
+  const suffix = options.name ? `_${options.name}` : ''
+
+  return touch(join(dir, `${prefix}${suffix}${extension}`)).then(() => undefined)
+}
+
+export interface MigrateOptions {
+  all?: boolean
+  name?: string
+  new?: boolean
+  since?: string
+  directory?: string
+}
+
+export interface TidyOptions {
+  directory?: string
+}
+
+export class Migrate extends EventEmitter {
+
+  constructor (public plugin?: Plugin) {
+    super()
   }
 
-  if (cmd === 'create') {
-    const date = new Date()
-    const prefix = String(date.getUTCFullYear()) +
-      pad(String(date.getUTCMonth() + 1), 2, '0') +
-      pad(String(date.getUTCDate()), 2, '0') +
-      pad(String(date.getUTCHours()), 2, '0') +
-      pad(String(date.getUTCMinutes()), 2, '0') +
-      pad(String(date.getUTCSeconds()), 2, '0')
-    const suffix = name ? `-${name}` : ''
-    const extension = extensions[extensions.length - 1]
-
-    return touch(join(dir, `${prefix}${suffix}${extension}`)).then(() => true)
-  }
-
-  if (cmd === 'list') {
-    return listFiles(dir, name, extensions, options)
-      .then(files => {
-        for (const file of files) {
-          log(`${chalk.cyan('•')} ${toName(file)}`)
-        }
-
-        return true
+  log (name: string, status: Status, date: Date) {
+    return Promise.resolve(this.plugin ? this.plugin.log(name, status, date) : undefined)
+      .then(() => {
+        this.emit('log', name)
       })
   }
 
-  if (cmd === 'up' || cmd === 'down') {
-    if (!options.count && !options.begin && !name && !options.all) {
-      const msg = 'Requires `count`, `begin`, `all`, or a migration name'
+  unlog (name: string) {
+    return Promise.resolve(this.plugin ? this.plugin.unlog(name) : undefined)
+      .then(() => {
+        this.emit('unlog', name)
+      })
+  }
 
-      log('')
-      log(`${chalk.red('⨯')} ${msg}`)
-      log('')
+  lock () {
+    return Promise.resolve(this.plugin ? this.plugin.lock() : undefined)
+  }
 
-      return Promise.reject(new ImmigrationError(msg))
+  unlock () {
+    return Promise.resolve(this.plugin ? this.plugin.unlock() : undefined)
+  }
+
+  executed () {
+    return Promise.resolve(this.plugin ? this.plugin.executed() : [])
+  }
+
+  tidy (options: TidyOptions = {}) {
+    const path = resolve(options.directory || 'migrations')
+
+    return Promise.all([list(path), this.executed()])
+      .then(([files, executed]) => {
+        const names = files.map(file => toName(file))
+
+        return Promise.all(executed.map((execution) => {
+          const exists = names.some(name => execution.name === name)
+
+          if (!exists) {
+            return this.unlog(execution.name)
+          }
+
+          return
+        }))
+      })
+  }
+
+  migrate (cmd: 'up' | 'down', options: MigrateOptions & ListOptions = {}) {
+    if (!options.name && !options.count && !options.begin && !options.all) {
+      if (this.plugin) {
+        const opt = cmd === 'up' ? 'new' : 'since'
+
+        if (!options.hasOwnProperty(opt)) {
+          return Promise.reject(new TypeError(`Requires "count", "begin", "all", "${opt}", or a migration name to run`))
+        }
+      } else {
+        return Promise.reject(new TypeError(`Requires "count", "begin", "all", or a migration name to run`))
+      }
     }
 
-    return listFiles(dir, name, extensions, options)
-      // Reverse files when going "down".
-      .then(files => cmd === 'up' ? files : files.reverse())
-      // Execute the migrations.
-      .then(files => {
-        const migrations = files.map(x => join(dir, x))
+    const date = new Date()
+    const path = resolve(options.directory || 'migrations')
+    const since = typeof options.since === 'string' ? ms(options.since) : Infinity
+
+    const p = this.lock()
+      .then(() => {
+        return Promise.all([
+          list(path, options),
+          this.executed()
+        ])
+      })
+      .then(([files, executed]) => {
+        const migrations = (cmd === 'up' ? files : files.reverse()).map(file => join(path, file))
 
         if (migrations.length === 0) {
-          return Promise.reject(new ImmigrationError('No migrations found'))
+          return Promise.reject(new ImmigrationError('No matching migrations found', undefined, path))
         }
 
+        // Check for bad migrations before proceeding.
+        for (const execution of executed) {
+          if (execution.status !== 'done') {
+            return Promise.reject(new ImmigrationError(
+              `A previously executed migration ("${execution.name}") is in a "${execution.status}" state. ` +
+              `Please "unlog" to mark as resolved before continuing`,
+              undefined,
+              path
+            ))
+          }
+        }
+
+        // Run each migration in order, skipping already executed or missing functions when "executed".
         return migrations.reduce<Promise<any>>(
           (p, path) => {
             const name = toName(path)
+            const match = executed.filter(x => x.name === name)
+            const exists = cmd === 'up' ?
+              (options.new ? !!match.length : false) :
+              match.some(x => x.date.getTime() < date.getTime() - since)
+
+            if (exists) {
+              return p
+            }
 
             return p
               .then(() => {
                 const m = require(path)
                 const fn = m[cmd]
+                const start = Date.now()
 
                 // Skip missing up/down methods.
                 if (fn == null) {
-                  log(`${chalk.magenta('skip')} ${name}`)
+                  this.emit('skipped', name)
                   return
                 }
 
                 if (typeof fn !== 'function') {
-                  throw new ImmigrationError(`Migration ${cmd} is not a function: ${name}`, null, path)
+                  throw new ImmigrationError(`Migration ${cmd} is not a function: ${name}`, undefined, path)
                 }
 
-                log(`${chalk.magenta(cmd)} ${name}`)
+                this.emit('pending', name)
 
-                return run(fn).catch(error => {
-                  throw new ImmigrationError(`Migration ${cmd} failed on ${name}`, error, path)
-                })
+                return this.log(name, 'pending', date)
+                  .then(() => run(fn))
+                  .then(
+                    () => {
+                      this.emit('done', name, Date.now() - start)
+
+                      return cmd === 'down' ? this.unlog(name) : this.log(name, 'done', date)
+                    },
+                    (error) => {
+                      this.emit('failed', name, Date.now() - start)
+
+                      return this.log(name, 'failed', date)
+                        .then(() => {
+                          let message = `Migration ${cmd} failed on ${name}`
+
+                          if (this.plugin) {
+                            message += '\nYou will need to run `unlog` before trying again'
+                          }
+
+                          return Promise.reject(new ImmigrationError(message, error, path))
+                        })
+                    }
+                  )
               })
           },
           Promise.resolve()
         )
-          .then(
-            () => {
-              log('')
-              log(`${chalk.green('✔')} Migration complete`)
-              log('')
-
-              return true
-            },
-            (error) => {
-              log('')
-              log(`${chalk.red('⨯')} Migration failed`)
-              log('')
-              log(error.toString())
-              log('')
-
-              return Promise.reject(error)
-            })
       })
+      .then(() => undefined)
+
+    return promiseFinally(p, () => this.unlock())
   }
 
-  return Promise.reject(new TypeError(`Unknown migration command: ${cmd}`))
-}
-
-/**
- * Execute a function with callback support.
- */
-function run (fn: (cb?: (err?: any) => any) => any): Promise<any> {
-  if (fn.length === 1) {
-    fn = thenify(fn)
-  }
-
-  // Handle errors thrown by `fn`.
-  return new Promise(resolve => resolve(fn()))
 }
 
 /**
  * Get the name from a path.
  */
-function toName (path: string): string {
+export function toName (path: string): string {
   return basename(path).replace(/\.[^\.]+$/, '')
 }
 
 /**
- * Logging function.
+ * Expose options.
  */
-function logger (shouldLog: boolean) {
-  if (shouldLog) {
-    return (msg: string) => console.error(msg)
-  }
-
-  return (msg: string): void => undefined
+export interface ListOptions {
+  name?: string
+  begin?: string
+  count?: number
+  extension?: string | string[]
 }
 
 /**
  * List available files.
  */
-function listFiles (dir: string, name: string, extensions: string[], options: immigration.Options) {
-  return readdir(dir)
+export function list (path: string, options: ListOptions = {}): Promise<string[]> {
+  const extensions = arrify(options.extension)
+
+  if (extensions.length === 0) {
+    extensions.push('.js')
+  }
+
+  return readdir(path)
     // Filter by name and supported extensions.
     .then(files => {
-      if (name) {
-        files = files.filter(filename => toName(filename) === name)
+      if (options.name) {
+        files = files.filter(filename => toName(filename) === options.name)
       }
 
       return files.filter(filename => extensions.indexOf(extname(filename)) > -1).sort()
@@ -194,9 +276,37 @@ function listFiles (dir: string, name: string, extensions: string[], options: im
 }
 
 /**
+ * Initialize an instance of a plugin.
+ */
+export function createPlugin (options: PluginOptions, cwd: string): Plugin {
+  const name = options._[0]
+  const path = resolveFrom(cwd, name)
+
+  if (!path) {
+    throw new TypeError(`Unable to require("${name}")`)
+  }
+
+  const plugin: PluginModule = require(path)
+
+  return plugin.init(options, cwd)
+}
+
+/**
+ * Execute a function with callback support.
+ */
+function run (fn: (cb?: (err?: any) => any) => any): Promise<any> {
+  if (fn.length === 1) {
+    fn = thenify(fn)
+  }
+
+  // Handle errors thrown by `fn`.
+  return new Promise(resolve => resolve(fn()))
+}
+
+/**
  * Error cause base.
  */
-class ImmigrationError extends BaseError {
+export class ImmigrationError extends BaseError {
   name = 'ImmigrationError'
 
   constructor (msg: string, cause?: Error, public path?: string) {
@@ -205,17 +315,41 @@ class ImmigrationError extends BaseError {
 }
 
 /**
- * Expose options.
+ * What the executed array should look like.
  */
-namespace immigration {
-  export interface Options {
-    all?: boolean
-    directory?: string
-    begin?: string
-    count?: number
-    extension?: string | string[]
-    log?: boolean
-  }
+export interface Executed {
+  name: string
+  status: Status
+  date: Date
 }
 
-export = immigration
+/**
+ * Plugin options is from `subarg`.
+ */
+export interface PluginOptions {
+  _: string[]
+  [key: string]: any
+}
+
+/**
+ * The plugin only needs to export a single `init` option.
+ */
+export interface PluginModule {
+  init (options: PluginOptions, directory: string): Plugin
+}
+
+/**
+ * Current migration status.
+ */
+export type Status = 'pending' | 'failed' | 'done'
+
+/**
+ * Expose the required methods for migration.
+ */
+export interface Plugin {
+  executed (): Promise<Executed[]>
+  lock (): Promise<any>
+  unlock (): Promise<any>
+  log (name: string, status: Status, date: Date): Promise<any>
+  unlog (name: string): Promise<any>
+}
