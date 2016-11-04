@@ -47,7 +47,7 @@ function run (): Promise<any> {
       directory: argv.directory,
       extension: arrify(argv.extension).pop()
     })
-      .then(() => console.log(`${chalk.green('✔')} Created`))
+      .then(() => console.log(`${chalk.green('✔')} File created`))
   }
 
   if (cmd === 'list') {
@@ -62,13 +62,16 @@ function run (): Promise<any> {
   if (cmd === 'up' || cmd === 'down' || cmd === 'executed' || cmd === 'log' || cmd === 'unlog' || cmd === 'tidy') {
     const plugin = argv.use ? immigration.createPlugin(argv.use, process.cwd()) : undefined
     const migrate = new immigration.Migrate(plugin)
+    let migrations = 0
 
     migrate.on('skipped', function (name: string) {
-      console.log(`${chalk.yellow('-')} ${name}`)
+      console.log(`${chalk.cyan('-')} ${name}`)
     })
 
     migrate.on('pending', function (name: string) {
-      logUpdate(`${chalk.cyan('○')} ${name}`)
+      migrations++
+
+      logUpdate(`${chalk.yellow('○')} ${name}`)
     })
 
     migrate.on('done', function (name: string, duration: number) {
@@ -92,7 +95,13 @@ function run (): Promise<any> {
         count: argv.count,
         extension: argv.extension
       })
-        .then(() => console.log(`\n${chalk.green('✔')} Migration finished successfully`))
+        .then(() => {
+          if (migrations > 0) {
+            console.log(`\n${chalk.green('✔')} Migrations ran successfully`)
+          } else {
+            console.log(`${chalk.yellow('○')} No migrations executed`)
+          }
+        })
     }
 
     if (!plugin) {

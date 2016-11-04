@@ -103,15 +103,21 @@ export class Migrate extends EventEmitter {
   }
 
   migrate (cmd: 'up' | 'down', options: MigrateOptions & ListOptions = {}) {
-    if (!options.name && !options.count && !options.begin && !options.all) {
+    const { name, count, begin, all, extension } = options
+
+    if (!name && !count && !begin && !all) {
       if (this.plugin) {
         const opt = cmd === 'up' ? 'new' : 'since'
 
         if (!options.hasOwnProperty(opt)) {
-          return Promise.reject(new TypeError(`Requires "count", "begin", "all", "${opt}", or a migration name to run`))
+          return Promise.reject<undefined>(
+            new TypeError(`Requires "count", "begin", "all", "${opt}", or a migration name to run`)
+          )
         }
       } else {
-        return Promise.reject(new TypeError(`Requires "count", "begin", "all", or a migration name to run`))
+        return Promise.reject<undefined>(
+          new TypeError(`Requires "count", "begin", "all", or a migration name to run`)
+        )
       }
     }
 
@@ -119,19 +125,21 @@ export class Migrate extends EventEmitter {
     const path = resolve(options.directory || 'migrations')
     const since = typeof options.since === 'string' ? ms(options.since) : Infinity
 
-    const p = this.lock()
+    const promise = this.lock()
       .then(() => {
         return Promise.all([
-          list(path, options),
+          list(path, {
+            reverse: cmd === 'down',
+            name,
+            begin,
+            count,
+            extension
+          }),
           this.executed()
         ])
       })
       .then(([files, executed]) => {
-        const migrations = (cmd === 'up' ? files : files.reverse()).map(file => join(path, file))
-
-        if (migrations.length === 0) {
-          return Promise.reject(new ImmigrationError('No matching migrations found', undefined, path))
-        }
+        const migrations = files.map(file => join(path, file))
 
         // Check for bad migrations before proceeding.
         for (const execution of executed) {
@@ -147,66 +155,62 @@ export class Migrate extends EventEmitter {
 
         // Run each migration in order, skipping already executed or missing functions when "executed".
         return migrations.reduce<Promise<any>>(
-          (p, path) => {
+          (promise, path) => {
+            const start = Date.now()
             const name = toName(path)
-            const match = executed.filter(x => x.name === name)
+            const matches = executed.filter(x => x.name === name)
             const exists = cmd === 'up' ?
-              (options.new ? !!match.length : false) :
-              match.some(x => x.date.getTime() < date.getTime() - since)
+              (options.new ? !!matches.length : false) :
+              matches.some(x => x.date.getTime() < date.getTime() - since)
 
             if (exists) {
-              return p
+              return promise
             }
 
-            return p
-              .then(() => {
-                const m = require(path)
-                const fn = m[cmd]
-                const start = Date.now()
+            return promise.then(() => {
+              const m = require(path)
+              const fn = m[cmd]
 
-                // Skip missing up/down methods.
-                if (fn == null) {
-                  this.emit('skipped', name)
-                  return
-                }
+              // Skip missing up/down methods.
+              if (fn == null) {
+                this.emit('skipped', name)
+                return
+              }
 
-                if (typeof fn !== 'function') {
-                  throw new ImmigrationError(`Migration ${cmd} is not a function: ${name}`, undefined, path)
-                }
+              if (typeof fn !== 'function') {
+                throw new ImmigrationError(`Migration ${cmd} is not a function: ${name}`, undefined, path)
+              }
 
-                this.emit('pending', name)
+              this.emit('pending', name)
 
-                return this.log(name, 'pending', date)
-                  .then(() => run(fn))
-                  .then(
-                    () => {
-                      this.emit('done', name, Date.now() - start)
+              return this.log(name, 'pending', date).then(() => run(fn))
+            })
+            .then(
+              () => {
+                this.emit('done', name, Date.now() - start)
 
-                      return cmd === 'down' ? this.unlog(name) : this.log(name, 'done', date)
-                    },
-                    (error) => {
-                      this.emit('failed', name, Date.now() - start)
+                return cmd === 'down' ? this.unlog(name) : this.log(name, 'done', date)
+              },
+              (error) => {
+                this.emit('failed', name, Date.now() - start)
 
-                      return this.log(name, 'failed', date)
-                        .then(() => {
-                          let message = `Migration ${cmd} failed on ${name}`
+                return this.log(name, 'failed', date).then(() => {
+                  let message = `Migration ${cmd} failed on ${name}`
 
-                          if (this.plugin) {
-                            message += '\nYou will need to run `unlog` before trying again'
-                          }
+                  if (this.plugin) {
+                    message += '\nYou will need to "unlog" this migration before trying again'
+                  }
 
-                          return Promise.reject(new ImmigrationError(message, error, path))
-                        })
-                    }
-                  )
-              })
+                  return Promise.reject(new ImmigrationError(message, error, path))
+                })
+              }
+            )
           },
           Promise.resolve()
         )
       })
-      .then(() => undefined)
 
-    return promiseFinally(p, () => this.unlock())
+    return promiseFinally(promise, () => this.unlock()).then(() => undefined)
   }
 
 }
@@ -226,6 +230,7 @@ export interface ListOptions {
   begin?: string
   count?: number
   extension?: string | string[]
+  reverse?: boolean
 }
 
 /**
@@ -239,6 +244,10 @@ export function list (path: string, options: ListOptions = {}): Promise<string[]
   }
 
   return readdir(path)
+    // Reverse the list.
+    .then(files => {
+      return options.reverse ? files.reverse() : files
+    })
     // Filter by name and supported extensions.
     .then(files => {
       if (options.name) {
@@ -246,14 +255,6 @@ export function list (path: string, options: ListOptions = {}): Promise<string[]
       }
 
       return files.filter(filename => extensions.indexOf(extname(filename)) > -1).sort()
-    })
-    // Support "count" option.
-    .then(files => {
-      if (options.count) {
-        return files.slice(-options.count)
-      }
-
-      return files
     })
     // Support "begin" option.
     .then(files => {
@@ -269,6 +270,14 @@ export function list (path: string, options: ListOptions = {}): Promise<string[]
         }
 
         return files.slice(begin)
+      }
+
+      return files
+    })
+    // Support "count" option.
+    .then(files => {
+      if (options.count) {
+        return files.slice(-options.count)
       }
 
       return files
