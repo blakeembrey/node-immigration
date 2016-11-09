@@ -45,6 +45,8 @@ export interface MigrateOptions {
   new?: boolean
   since?: string
   directory?: string
+  retries?: number
+  retryWait?: number
 }
 
 export interface TidyOptions {
@@ -121,96 +123,134 @@ export class Migrate extends EventEmitter {
       }
     }
 
-    const date = new Date()
     const path = resolve(options.directory || 'migrations')
     const since = typeof options.since === 'string' ? ms(options.since) : Infinity
+    const retryWait = options.retryWait || 350
+    let retries = options.retries || 5
 
-    const promise = this.lock()
-      .then(() => {
-        return Promise.all([
-          list(path, {
-            reverse: cmd === 'down',
-            name,
-            begin,
-            count,
-            extension
-          }),
-          this.executed()
-        ])
-      })
-      .then(([files, executed]) => {
-        const migrations = files.map(file => join(path, file))
+    // Filter the list of files to only the ones we care about running.
+    const filter = (files: string[], executed: Executed[]) => {
+      return files.filter((file) => {
+        const name = toName(file)
+        const matches = executed.filter(x => x.name === name)
 
-        // Check for bad migrations before proceeding.
-        for (const execution of executed) {
-          if (execution.status !== 'done') {
-            return Promise.reject(new ImmigrationError(
-              `A previously executed migration ("${execution.name}") is in a "${execution.status}" state. ` +
-              `Please "unlog" to mark as resolved before continuing`,
-              undefined,
-              path
-            ))
-          }
+        if (cmd === 'up') {
+          return options.new ? !matches.length : true
         }
 
-        // Run each migration in order, skipping already executed or missing functions when "executed".
-        return migrations.reduce<Promise<any>>(
-          (promise, path) => {
-            const start = Date.now()
-            const name = toName(path)
-            const matches = executed.filter(x => x.name === name)
-            const exists = cmd === 'up' ?
-              (options.new ? !!matches.length : false) :
-              matches.some(x => x.date.getTime() < date.getTime() - since)
+        return matches.length ? matches.some(x => x.date.getTime() >= Date.now() - since) : true
+      })
+    }
 
-            if (exists) {
-              return promise
-            }
+    const exec = (file: string) => {
+      const name = toName(file)
+      const date = new Date()
+      const m = require(join(path, file))
+      const fn = m[cmd]
 
-            return promise.then(() => {
-              const m = require(path)
-              const fn = m[cmd]
+      // Skip missing up/down methods.
+      if (fn == null) {
+        this.emit('skipped', name)
+        return
+      }
 
-              // Skip missing up/down methods.
-              if (fn == null) {
-                this.emit('skipped', name)
-                return
+      if (typeof fn !== 'function') {
+        return Promise.reject<undefined>(
+          new ImmigrationError(`Migration ${cmd} is not a function: ${name}`, undefined, path)
+        )
+      }
+
+      this.emit('pending', name)
+
+      return this.log(name, 'pending', date).then(() => run(fn))
+        .then(
+          () => {
+            this.emit('done', name, Date.now() - date.getTime())
+
+            return cmd === 'down' ? this.unlog(name) : this.log(name, 'done', date)
+          },
+          (error) => {
+            this.emit('failed', name, Date.now() - date.getTime())
+
+            return this.log(name, 'failed', date).then(() => {
+              let message = `Migration ${cmd} failed on "${name}"`
+
+              if (this.plugin) {
+                message += '\nYou will need to "unlog" this migration before trying again'
               }
 
-              if (typeof fn !== 'function') {
-                throw new ImmigrationError(`Migration ${cmd} is not a function: ${name}`, undefined, path)
-              }
-
-              this.emit('pending', name)
-
-              return this.log(name, 'pending', date).then(() => run(fn))
+              return Promise.reject(new ImmigrationError(message, error, path))
             })
-            .then(
-              () => {
-                this.emit('done', name, Date.now() - start)
+          }
+        )
+    }
 
-                return cmd === 'down' ? this.unlog(name) : this.log(name, 'done', date)
-              },
-              (error) => {
-                this.emit('failed', name, Date.now() - start)
+    // Run the migration.
+    const migrate = (files: string[], executed: Executed[]) => {
+      // Check for bad migrations before proceeding.
+      for (const execution of executed) {
+        if (execution.status !== 'done') {
+          return Promise.reject<undefined>(new ImmigrationError(
+            `Another migration ("${execution.name}") appears to be in a "${execution.status}" state. ` +
+            `Please verify your migration plugin has acquired a lock correctly`,
+            undefined,
+            path
+          ))
+        }
+      }
 
-                return this.log(name, 'failed', date).then(() => {
-                  let message = `Migration ${cmd} failed on ${name}`
+      return filter(files, executed).reduce<Promise<any>>(
+        (p, file) => p.then(() => exec(file)),
+        Promise.resolve()
+      )
+    }
 
-                  if (this.plugin) {
-                    message += '\nYou will need to "unlog" this migration before trying again'
-                  }
+    // Make a migration attempt by skipping lock when possible.
+    const attempt = (files: string[]) => {
+      return this.executed()
+        .then<undefined>((executed) => {
+          // Check for bad migrations before proceeding.
+          for (const execution of executed) {
+            if (execution.status === 'failed') {
+              return Promise.reject<undefined>(new ImmigrationError(
+                `A previously executed migration ("${execution.name}") is in a "${execution.status}" state. ` +
+                `Please "unlog" to mark as resolved before continuing`,
+                undefined,
+                path
+              ))
+            }
+          }
 
-                  return Promise.reject(new ImmigrationError(message, error, path))
+          const pending = filter(files, executed)
+
+          // Skip the lock and migration step when there's no pending migrations.
+          if (!pending.length) {
+            return
+          }
+
+          const promise = this.lock()
+            .then(() => this.executed())
+            .then((executed) => migrate(files, executed))
+
+          return promiseFinally(promise, () => this.unlock())
+            .catch((error) => {
+              // Allow lock retries. This is useful as we will re-attempt which
+              // may no longer require any migrations to lock to run.
+              if (error instanceof LockRetryError && retries-- > 0) {
+                return new Promise((resolve) => {
+                  this.emit('retry', retries)
+
+                  setTimeout(() => resolve(attempt(files)), retryWait)
                 })
               }
-            )
-          },
-          Promise.resolve()
-        )
-      })
 
-    return promiseFinally(promise, () => this.unlock()).then(() => undefined)
+              return Promise.reject<undefined>(error)
+            })
+        })
+    }
+
+    return list(path, { reverse: cmd === 'down', name, begin, count, extension })
+      .then((files) => attempt(files))
   }
 
 }
@@ -313,7 +353,7 @@ function run (fn: (cb?: (err?: any) => any) => any): Promise<any> {
 }
 
 /**
- * Error cause base.
+ * Errors caused during migration.
  */
 export class ImmigrationError extends BaseError {
   name = 'ImmigrationError'
@@ -324,7 +364,14 @@ export class ImmigrationError extends BaseError {
 }
 
 /**
- * What the executed array should look like.
+ * Create a "retry lock" error.
+ */
+export class LockRetryError extends BaseError {
+  name = 'LockRetryError'
+}
+
+/**
+ * What a execution looks like.
  */
 export interface Executed {
   name: string

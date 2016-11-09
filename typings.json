@@ -3,7 +3,6 @@
     "arrify": "registry:npm/arrify#1.0.0+20160723033700",
     "blue-tape": "registry:npm/blue-tape#0.2.0+20160723033700",
     "chalk": "registry:npm/chalk#1.1.1+20160812215109",
-    "lockfile": "registry:npm/lockfile#1.0.0+20160723033700",
     "log-update": "registry:npm/log-update#1.0.0+20160723033700",
     "ms": "registry:npm/ms#0.1.0+20160723033700",
     "pad-left": "registry:npm/pad-left#2.0.0+20160723033700",

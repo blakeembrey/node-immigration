@@ -1,13 +1,14 @@
+import Promise = require('any-promise')
 import thenify = require('thenify')
-import lockfile = require('lockfile')
 import * as fs from 'fs'
 import { join } from 'path'
-import { Plugin, PluginOptions } from './index'
+import { Plugin, PluginOptions, LockRetryError } from './index'
 
 const readFile = thenify<string, string, string>(fs.readFile)
 const writeFile = thenify<string, string, void>(fs.writeFile)
-const lockFile = thenify(lockfile.lock)
-const unlockFile = thenify(lockfile.unlock)
+const open = thenify<string, string, number>(fs.open)
+const close = thenify(fs.close)
+const unlink = thenify(fs.unlink)
 
 /**
  * Options for the migration plugin.
@@ -28,6 +29,7 @@ export interface FileJson {
  */
 export function init (options: Options, dir: string): Plugin {
   const path = join(dir, options.path || '.migrate.json')
+  const lockfile = `${path}.lock`
 
   function read (path: string) {
     return readFile(path, 'utf8').then(
@@ -53,11 +55,21 @@ export function init (options: Options, dir: string): Plugin {
   }
 
   function lock () {
-    return lockFile(`${path}.lock`)
+    return open(lockfile, `wx`)
+      .then(
+        (fd) => close(fd),
+        (err) => {
+          if (err.code === 'EEXIST') {
+            throw new LockRetryError(`Retry allowed`, err)
+          }
+
+          return Promise.reject(err)
+        }
+      )
   }
 
   function unlock () {
-    return unlockFile(`${path}.lock`)
+    return unlink(lockfile).catch(() => undefined)
   }
 
   function executed () {

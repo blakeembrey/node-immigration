@@ -59,7 +59,15 @@ function run (): Promise<any> {
       })
   }
 
-  if (cmd === 'up' || cmd === 'down' || cmd === 'executed' || cmd === 'log' || cmd === 'unlog' || cmd === 'tidy') {
+  if (
+    cmd === 'up' ||
+    cmd === 'down' ||
+    cmd === 'executed' ||
+    cmd === 'log' ||
+    cmd === 'unlog' ||
+    cmd === 'tidy' ||
+    cmd === 'unlock'
+  ) {
     const plugin = argv.use ? immigration.createPlugin(argv.use, process.cwd()) : undefined
     const migrate = new immigration.Migrate(plugin)
     let migrations = 0
@@ -125,8 +133,7 @@ function run (): Promise<any> {
         throw new TypeError(`Requires the migration name to "log"`)
       }
 
-      return migrate.log(name, 'done', new Date())
-        .then(() => console.log(`${chalk.green('✔')} Migration logged`))
+      return migrate.log(name, 'done', new Date()).then(() => console.log(`Migration "${name}" logged as done`))
     }
 
     if (cmd === 'unlog') {
@@ -134,13 +141,15 @@ function run (): Promise<any> {
         throw new TypeError(`Requires the migration name to "unlog"`)
       }
 
-      return migrate.unlog(name)
-        .then(() => console.log(`${chalk.green('✔')} Migration cleared`))
+      return migrate.unlog(name).then(() => console.log(`Migration "${name}" unlogged`))
     }
 
     if (cmd === 'tidy') {
-      return migrate.tidy()
-        .then(() => console.log(`${chalk.green('✔')} Migrations tidied`))
+      return migrate.tidy().then(() => console.log(`Migrations tidied`))
+    }
+
+    if (cmd === 'unlock') {
+      return migrate.unlock().then(() => console.log(`Manually unlocked the migration`))
     }
   }
 

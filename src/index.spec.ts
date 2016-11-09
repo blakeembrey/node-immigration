@@ -20,7 +20,7 @@ test('immigration', t => {
         all: true,
         directory: DIRECTORY
       })
-        .then(result => {
+        .then(() => {
           return stat(SUCCESS_FILE).then(stats => t.ok(stats.isFile()))
         })
     })
@@ -32,7 +32,7 @@ test('immigration', t => {
         all: true,
         directory: DIRECTORY
       })
-        .then(result => {
+        .then(() => {
           return stat(SUCCESS_FILE).catch(() => t.pass('file was removed'))
         })
     })
@@ -48,11 +48,23 @@ test('immigration', t => {
 
     t.test('up', t => {
       return migrate.migrate('up', {
-        all: true,
+        new: true,
         directory: DIRECTORY
       })
-        .then(result => {
+        .then(() => {
           return stat(SUCCESS_FILE).then(stats => t.ok(stats.isFile()))
+        })
+    })
+
+    t.test('up (again)', t => {
+      const now = Date.now()
+
+      return migrate.migrate('up', {
+        new: true,
+        directory: DIRECTORY
+      })
+        .then(() => {
+          return stat(SUCCESS_FILE).then(stats => t.ok(stats.mtime.getTime() < now))
         })
     })
 
@@ -63,7 +75,7 @@ test('immigration', t => {
         all: true,
         directory: DIRECTORY
       })
-        .then(result => {
+        .then(() => {
           return stat(SUCCESS_FILE).catch(() => t.pass('file was removed'))
         })
     })

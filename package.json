@@ -14,7 +14,7 @@
   "scripts": {
     "lint": "tslint \"src/**/*.ts\"",
     "build": "rm -rf dist/ && tsc",
-    "test-spec": "blue-tape \"dist/**/*.spec.js\" | tap-spec",
+    "test-spec": "blue-tape \"dist/**/*.spec.js\"",
     "test-cov": "istanbul cover --print none -x \"*.spec.js\" blue-tape -- \"dist/**/*.spec.js\" | tap-spec",
     "test": "npm run lint && npm run build && npm run test-cov",
     "prepublish": "typings install && npm run build"
@@ -55,7 +55,6 @@
     "arrify": "^1.0.1",
     "bluebird": "^3.1.1",
     "chalk": "^1.1.1",
-    "lockfile": "^1.0.2",
     "log-update": "^1.0.2",
     "make-error-cause": "^1.2.1",
     "ms": "^0.7.2",
