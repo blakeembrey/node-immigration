@@ -9,6 +9,7 @@ const writeFile = thenify<string, string, void>(fs.writeFile)
 const open = thenify<string, string, number>(fs.open)
 const close = thenify(fs.close)
 const unlink = thenify(fs.unlink)
+const stat = thenify(fs.stat)
 
 /**
  * Options for the migration plugin.
@@ -72,6 +73,20 @@ export function init (options: Options, dir: string): Plugin {
     return unlink(lockfile).catch(() => undefined)
   }
 
+  function isLocked () {
+    return stat(lockfile)
+      .then(
+        () => true,
+        (err) => {
+          if (err.code === 'ENOENT') {
+            return false
+          }
+
+          return Promise.reject<boolean>(err)
+        }
+      )
+  }
+
   function executed () {
     return read(path).then((file: FileJson) => {
       return Object.keys(file).map((key) => {
@@ -84,5 +99,5 @@ export function init (options: Options, dir: string): Plugin {
     })
   }
 
-  return { executed, lock, unlock, log, unlog }
+  return { executed, lock, isLocked, unlock, log, unlog }
 }

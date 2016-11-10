@@ -81,6 +81,10 @@ export class Migrate extends EventEmitter {
     return Promise.resolve(this.plugin ? this.plugin.unlock() : undefined)
   }
 
+  isLocked () {
+    return Promise.resolve(this.plugin ? this.plugin.isLocked() : false)
+  }
+
   executed () {
     return Promise.resolve(this.plugin ? this.plugin.executed() : [])
   }
@@ -112,12 +116,12 @@ export class Migrate extends EventEmitter {
         const opt = cmd === 'up' ? 'new' : 'since'
 
         if (!options.hasOwnProperty(opt)) {
-          return Promise.reject<undefined>(
+          return Promise.reject<string[]>(
             new TypeError(`Requires "count", "begin", "all", "${opt}", or a migration name to run`)
           )
         }
       } else {
-        return Promise.reject<undefined>(
+        return Promise.reject<string[]>(
           new TypeError(`Requires "count", "begin", "all", or a migration name to run`)
         )
       }
@@ -190,7 +194,7 @@ export class Migrate extends EventEmitter {
       // Check for bad migrations before proceeding.
       for (const execution of executed) {
         if (execution.status !== 'done') {
-          return Promise.reject<undefined>(new ImmigrationError(
+          return Promise.reject<string[]>(new ImmigrationError(
             `Another migration ("${execution.name}") appears to be in a "${execution.status}" state. ` +
             `Please verify your migration plugin has acquired a lock correctly`,
             undefined,
@@ -199,20 +203,22 @@ export class Migrate extends EventEmitter {
         }
       }
 
-      return filter(files, executed).reduce<Promise<any>>(
+      const migrations = filter(files, executed)
+
+      return migrations.reduce<Promise<any>>(
         (p, file) => p.then(() => exec(file)),
         Promise.resolve()
-      )
+      ).then(() => migrations)
     }
 
     // Make a migration attempt by skipping lock when possible.
     const attempt = (files: string[]) => {
       return this.executed()
-        .then<undefined>((executed) => {
+        .then<string[]>((executed) => {
           // Check for bad migrations before proceeding.
           for (const execution of executed) {
             if (execution.status === 'failed') {
-              return Promise.reject<undefined>(new ImmigrationError(
+              return Promise.reject<string[]>(new ImmigrationError(
                 `A previously executed migration ("${execution.name}") is in a "${execution.status}" state. ` +
                 `Please "unlog" to mark as resolved before continuing`,
                 undefined,
@@ -225,7 +231,7 @@ export class Migrate extends EventEmitter {
 
           // Skip the lock and migration step when there's no pending migrations.
           if (!pending.length) {
-            return
+            return pending
           }
 
           const promise = this.lock()
@@ -406,6 +412,7 @@ export interface Plugin {
   executed (): Promise<Executed[]>
   lock (): Promise<any>
   unlock (): Promise<any>
+  isLocked (): Promise<boolean>
   log (name: string, status: Status, date: Date): Promise<any>
   unlog (name: string): Promise<any>
 }

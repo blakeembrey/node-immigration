@@ -41,44 +41,16 @@ function run (): Promise<any> {
   const cmd = argv._[0]
   const name = argv._[1] as string | undefined
 
-  if (cmd === 'create') {
-    return immigration.create({
-      name: name,
-      directory: argv.directory,
-      extension: arrify(argv.extension).pop()
-    })
-      .then(() => console.log(`${chalk.green('✔')} File created`))
-  }
-
-  if (cmd === 'list') {
-    return immigration.list(resolve(argv.directory || 'migrations'))
-      .then((paths) => {
-        for (const path of paths) {
-          console.log(`${chalk.cyan('•')} ${immigration.toName(path)}`)
-        }
-      })
-  }
-
-  if (
-    cmd === 'up' ||
-    cmd === 'down' ||
-    cmd === 'executed' ||
-    cmd === 'log' ||
-    cmd === 'unlog' ||
-    cmd === 'tidy' ||
-    cmd === 'unlock'
-  ) {
+  // Wrap an execution with the plugin instance.
+  function withPlugin <T> (exec: (migrate: immigration.Migrate) => T): () => T {
     const plugin = argv.use ? immigration.createPlugin(argv.use, process.cwd()) : undefined
     const migrate = new immigration.Migrate(plugin)
-    let migrations = 0
 
     migrate.on('skipped', function (name: string) {
       console.log(`${chalk.cyan('-')} ${name}`)
     })
 
     migrate.on('pending', function (name: string) {
-      migrations++
-
       logUpdate(`${chalk.yellow('○')} ${name}`)
     })
 
@@ -92,8 +64,17 @@ function run (): Promise<any> {
       logUpdate.done()
     })
 
-    if (cmd === 'up' || cmd === 'down') {
-      return migrate.migrate(cmd as 'up' | 'down', {
+    migrate.on('retry', function (retries: number) {
+      logUpdate(`${chalk.yellow('…')} Retrying to acquire lock ${retries} more ${retries === 1 ? 'time' : 'times'}`)
+    })
+
+    return () => exec(migrate)
+  }
+
+  // Generate the migration function.
+  function createMigration (direction: 'up' | 'down') {
+    return function (migrate: immigration.Migrate) {
+      return migrate.migrate(direction, {
         all: argv.all,
         name: name,
         new: argv.new,
@@ -103,54 +84,100 @@ function run (): Promise<any> {
         count: argv.count,
         extension: argv.extension
       })
-        .then(() => {
-          if (migrations > 0) {
-            console.log(`\n${chalk.green('✔')} Migrations ran successfully`)
+        .then((migrations) => {
+          if (migrations.length) {
+            console.log(`\n${chalk.green('✔')} Migration completed`)
           } else {
-            console.log(`${chalk.yellow('○')} No migrations executed`)
+            console.log(`${chalk.yellow('…')} No migrations run`)
           }
         })
     }
+  }
 
-    if (!plugin) {
-      throw new TypeError(`This command requires a plugin to be specified`)
+  // Create the executed list function.
+  function executed (migrate: immigration.Migrate) {
+    return migrate.executed()
+      .then((executed) => {
+        for (const execution of executed) {
+          console.log(
+            `${chalk.cyan('•')} ${execution.name} ${execution.status} @ ` +
+            `${chalk.magenta(execution.date.toISOString())}`
+          )
+        }
+      })
+  }
+
+  // Log a migration as done.
+  function log (migrate: immigration.Migrate) {
+    if (!name) {
+      throw new TypeError(`Requires the migration name to "log"`)
     }
 
-    if (cmd === 'executed') {
-      return migrate.executed()
-        .then((executed) => {
-          for (const execution of executed) {
-            console.log(
-              `${chalk.cyan('•')} ${execution.name} ${execution.status} @ ` +
-              `${chalk.magenta(execution.date.toISOString())}`
-            )
-          }
-        })
+    return migrate.log(name, 'done', new Date()).then(() => console.log(`Migration "${name}" logged as done`))
+  }
+
+  // Unlog a migration status.
+  function unlog (migrate: immigration.Migrate) {
+    if (!name) {
+      throw new TypeError(`Requires the migration name to "unlog"`)
     }
 
-    if (cmd === 'log') {
-      if (!name) {
-        throw new TypeError(`Requires the migration name to "log"`)
-      }
+    return migrate.unlog(name).then(() => console.log(`Migration "${name}" unlogged`))
+  }
 
-      return migrate.log(name, 'done', new Date()).then(() => console.log(`Migration "${name}" logged as done`))
-    }
+  // Tidy up missing migrations from the plugin.
+  function tidy (migrate: immigration.Migrate) {
+    return migrate.tidy().then(() => console.log(`Migrations tidied`))
+  }
 
-    if (cmd === 'unlog') {
-      if (!name) {
-        throw new TypeError(`Requires the migration name to "unlog"`)
-      }
+  // Remove the current migration lock.
+  function unlock (migrate: immigration.Migrate) {
+    return migrate.unlock().then(() => console.log(`Manually unlocked the migration`))
+  }
 
-      return migrate.unlog(name).then(() => console.log(`Migration "${name}" unlogged`))
-    }
+  // Check if the migration is locked.
+  function locked (migrate: immigration.Migrate) {
+    return migrate.isLocked()
+      .then((locked) => {
+        console.log(`The migration state is current ${locked ? 'locked' : 'unlocked'}`)
+      })
+  }
 
-    if (cmd === 'tidy') {
-      return migrate.tidy().then(() => console.log(`Migrations tidied`))
-    }
+  // Create a new migration file.
+  function create () {
+    return immigration.create({
+      name: name,
+      directory: argv.directory,
+      extension: arrify(argv.extension).pop()
+    })
+      .then(() => console.log(`${chalk.green('✔')} File created`))
+  }
 
-    if (cmd === 'unlock') {
-      return migrate.unlock().then(() => console.log(`Manually unlocked the migration`))
-    }
+  // List available migrations.
+  function list () {
+    return immigration.list(resolve(argv.directory || 'migrations'))
+      .then((paths) => {
+        for (const path of paths) {
+          console.log(`${chalk.cyan('•')} ${immigration.toName(path)}`)
+        }
+      })
+  }
+
+  const commands: { [cmd: string]: () => any } = {
+    create,
+    list,
+    up: withPlugin(createMigration('up')),
+    down: withPlugin(createMigration('down')),
+    executed: withPlugin(executed),
+    log: withPlugin(log),
+    unlog: withPlugin(unlog),
+    tidy: withPlugin(tidy),
+    unlock: withPlugin(unlock),
+    locked: withPlugin(locked)
+  }
+
+  if (commands.hasOwnProperty(cmd as string)) {
+    return commands[cmd as string]()
   }
 
   console.error(`
