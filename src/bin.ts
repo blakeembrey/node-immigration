@@ -65,7 +65,7 @@ function run (): Promise<any> {
     })
 
     migrate.on('retry', function (retries: number) {
-      logUpdate(`${chalk.yellow('…')} Retrying to acquire lock ${retries} more ${retries === 1 ? 'time' : 'times'}`)
+      logUpdate(`${chalk.yellow('…')} Trying to acquire lock ${retries} more ${retries === 1 ? 'time' : 'times'}`)
     })
 
     return () => exec(migrate)

@@ -130,7 +130,7 @@ export class Migrate extends EventEmitter {
     const path = resolve(options.directory || 'migrations')
     const since = typeof options.since === 'string' ? ms(options.since) : Infinity
     const retryWait = options.retryWait || 350
-    let retries = options.retries || 5
+    let retries = options.retries || 10
 
     // Filter the list of files to only the ones we care about running.
     const filter = (files: string[], executed: Executed[]) => {
@@ -374,6 +374,10 @@ export class ImmigrationError extends BaseError {
  */
 export class LockRetryError extends BaseError {
   name = 'LockRetryError'
+
+  constructor (cause?: Error) {
+    super('Failed to acquire migration lock', cause)
+  }
 }
 
 /**

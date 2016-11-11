@@ -61,7 +61,7 @@ export function init (options: Options, dir: string): Plugin {
         (fd) => close(fd),
         (err) => {
           if (err.code === 'EEXIST') {
-            throw new LockRetryError(`Retry allowed`, err)
+            throw new LockRetryError(err)
           }
 
           return Promise.reject(err)
