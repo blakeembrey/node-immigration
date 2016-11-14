@@ -290,10 +290,6 @@ export function list (path: string, options: ListOptions = {}): Promise<string[]
   }
 
   return readdir(path)
-    // Reverse the list.
-    .then(files => {
-      return options.reverse ? files.reverse() : files
-    })
     // Filter by name and supported extensions.
     .then(files => {
       if (options.name) {
@@ -301,6 +297,10 @@ export function list (path: string, options: ListOptions = {}): Promise<string[]
       }
 
       return files.filter(filename => extensions.indexOf(extname(filename)) > -1).sort()
+    })
+    // Reverse the list.
+    .then(files => {
+      return options.reverse ? files.reverse() : files
     })
     // Support "begin" option.
     .then(files => {
