@@ -49,13 +49,9 @@ export interface MigrateOptions {
   retryWait?: number
 }
 
-export interface TidyOptions {
-  directory?: string
-}
-
 export class Migrate extends EventEmitter {
 
-  constructor (public plugin?: Plugin) {
+  constructor (public plugin?: Plugin, public directory: string = 'migrations') {
     super()
   }
 
@@ -89,10 +85,8 @@ export class Migrate extends EventEmitter {
     return Promise.resolve(this.plugin ? this.plugin.executed() : [])
   }
 
-  tidy (options: TidyOptions = {}) {
-    const path = resolve(options.directory || 'migrations')
-
-    return Promise.all([list(path), this.executed()])
+  tidy () {
+    return Promise.all([this.list(), this.executed()])
       .then(([files, executed]) => {
         const names = files.map(file => toName(file))
 
@@ -255,8 +249,12 @@ export class Migrate extends EventEmitter {
         })
     }
 
-    return list(path, { reverse: cmd === 'down', name, begin, count, extension })
+    return this.list({ reverse: cmd === 'down', name, begin, count, extension })
       .then((files) => attempt(files))
+  }
+
+  list (options?: ListOptions) {
+    return list(this.directory, options)
   }
 
 }
