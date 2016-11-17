@@ -44,7 +44,6 @@ export interface MigrateOptions {
   name?: string
   new?: boolean
   since?: string
-  directory?: string
   retries?: number
   retryWait?: number
 }
@@ -121,7 +120,6 @@ export class Migrate extends EventEmitter {
       }
     }
 
-    const path = resolve(options.directory || 'migrations')
     const since = typeof options.since === 'string' ? ms(options.since) : Infinity
     const retryWait = options.retryWait || 350
     let retries = options.retries || 10
@@ -143,7 +141,7 @@ export class Migrate extends EventEmitter {
     const exec = (file: string) => {
       const name = toName(file)
       const date = new Date()
-      const m = require(join(path, file))
+      const m = require(join(this.directory, file))
       const fn = m[cmd]
 
       // Skip missing up/down methods.
@@ -154,7 +152,7 @@ export class Migrate extends EventEmitter {
 
       if (typeof fn !== 'function') {
         return Promise.reject<undefined>(
-          new ImmigrationError(`Migration ${cmd} is not a function: ${name}`, undefined, path)
+          new ImmigrationError(`Migration ${cmd} is not a function: ${name}`, undefined, this.directory)
         )
       }
 
@@ -177,7 +175,7 @@ export class Migrate extends EventEmitter {
                 message += '\nYou will need to "unlog" this migration before trying again'
               }
 
-              return Promise.reject(new ImmigrationError(message, error, path))
+              return Promise.reject(new ImmigrationError(message, error, this.directory))
             })
           }
         )
@@ -192,7 +190,7 @@ export class Migrate extends EventEmitter {
             `Another migration ("${execution.name}") appears to be in a "${execution.status}" state. ` +
             `Please verify your migration plugin has acquired a lock correctly`,
             undefined,
-            path
+            this.directory
           ))
         }
       }
@@ -216,7 +214,7 @@ export class Migrate extends EventEmitter {
                 `A previously executed migration ("${execution.name}") is in a "${execution.status}" state. ` +
                 `Please "unlog" to mark as resolved before continuing`,
                 undefined,
-                path
+                this.directory
               ))
             }
           }

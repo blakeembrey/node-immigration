@@ -152,7 +152,7 @@ function run (): Promise<any> {
   function create () {
     return immigration.create({
       name: name,
-      directory: directory,
+      directory: migrate.directory,
       extension: arrify(options.extension).pop()
     })
       .then(() => console.log(`${chalk.green('✔')} File created`))

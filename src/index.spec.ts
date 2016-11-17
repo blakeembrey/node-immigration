@@ -13,12 +13,11 @@ const SUCCESS_FILE = join(__dirname, '../test/.success')
 
 test('immigration', t => {
   t.test('clean migration', t => {
-    const migrate = new immigration.Migrate()
+    const migrate = new immigration.Migrate(undefined, DIRECTORY)
 
     t.test('up', t => {
       return migrate.migrate('up', {
-        all: true,
-        directory: DIRECTORY
+        all: true
       })
         .then(() => {
           return stat(SUCCESS_FILE).then(stats => t.ok(stats.isFile()))
@@ -29,8 +28,7 @@ test('immigration', t => {
       t.plan(1)
 
       return migrate.migrate('down', {
-        all: true,
-        directory: DIRECTORY
+        all: true
       })
         .then(() => {
           return stat(SUCCESS_FILE).catch(() => t.pass('file was removed'))
@@ -44,12 +42,11 @@ test('immigration', t => {
       DIRECTORY
     )
 
-    const migrate = new immigration.Migrate(plugin)
+    const migrate = new immigration.Migrate(plugin, DIRECTORY)
 
     t.test('up', t => {
       return migrate.migrate('up', {
-        new: true,
-        directory: DIRECTORY
+        new: true
       })
         .then(() => {
           return stat(SUCCESS_FILE).then(stats => t.ok(stats.isFile()))
@@ -60,8 +57,7 @@ test('immigration', t => {
       const now = Date.now()
 
       return migrate.migrate('up', {
-        new: true,
-        directory: DIRECTORY
+        new: true
       })
         .then(() => {
           return stat(SUCCESS_FILE).then(stats => t.ok(stats.mtime.getTime() < now))
@@ -72,8 +68,7 @@ test('immigration', t => {
       t.plan(1)
 
       return migrate.migrate('down', {
-        all: true,
-        directory: DIRECTORY
+        all: true
       })
         .then(() => {
           return stat(SUCCESS_FILE).catch(() => t.pass('file was removed'))
