@@ -37,14 +37,19 @@ Commands:
   executed        List the run migrations *
   log [name]      Mark a migration as run (without explicitly executing up) *
   unlog [name]    Remove a migration marked as run (without explicitly executing down) *
-  tidy            Unlog unknown migration names from the plugin *
+  tidy            Unlog unknown migration names *
 
-* Requires plugin (E.g. "--use [ immigration/fs ]")
+* Requires adapter (E.g. "--use [ immigration/fs ]")
 ```
 
 Migrations can export two functions: `up` and `down`. These functions can accept a callback or return a promise for asynchronous actions, such as altering a database.
 
-Plugins can be used with `immigration` for persistence of migration state. The built-in plugin is `fs`, but others can be added. The only requirement is that they export function called `init` which, when called, returns an object with `lock`, `unlock`, `log` and `unlog` functions.
+### Adapters
+
+Adapters can be used with `immigration` for persistence of migration state. The built-in adapter is `fs`, but others can be created. The only requirement is that they export function called `init` which, when called, returns an object with `isLocked`, `executed`, `lock`, `unlock`, `log` and `unlog` functions.
+
+* [`fs`](https://github.com/blakeembrey/node-immigration/blob/master/src/fs.ts) - Built-in adapter persisting to a JSON file
+* [`rethinkdb`](https://github.com/blakeembrey/node-immigration-rethinkdb) - Adapter for RethinkDB persistence
 
 ### CLI
 
