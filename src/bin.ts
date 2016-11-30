@@ -15,6 +15,7 @@ function run (): Promise<any> {
     directory?: string
     count?: number
     extension?: string | string[]
+    reverse?: boolean
     all?: boolean
     new?: boolean
     help?: boolean
@@ -24,7 +25,7 @@ function run (): Promise<any> {
 
   const argv = subarg<Argv>(process.argv.slice(2), {
     string: ['begin', 'directory', 'extension', 'since'],
-    boolean: ['help', 'all', 'new'],
+    boolean: ['help', 'all', 'new', 'reverse'],
     alias: {
       u: ['use'],
       d: ['directory'],
@@ -34,7 +35,8 @@ function run (): Promise<any> {
       a: ['all'],
       n: ['new'],
       h: ['help'],
-      s: ['since']
+      s: ['since'],
+      r: ['reverse']
     }
   })
 
@@ -49,6 +51,7 @@ function run (): Promise<any> {
     since: argv.since,
     begin: argv.begin,
     count: argv.count,
+    reverse: argv.reverse,
     extension: argv.extension
   }
 

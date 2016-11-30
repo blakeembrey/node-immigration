@@ -319,6 +319,10 @@ export function list (path: string, options: ListOptions = {}): Promise<string[]
     // Support "count" option.
     .then(files => {
       if (options.count) {
+        if (options.reverse) {
+          return files.slice(0, options.count)
+        }
+
         return files.slice(-options.count)
       }
 
