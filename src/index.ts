@@ -120,7 +120,7 @@ export class Migrate extends EventEmitter {
       }
     }
 
-    const since = typeof options.since === 'string' ? ms(options.since) : Infinity
+    const since = typeof options.since === 'string' ? ms(options.since) : undefined
     const retryWait = options.retryWait || 350
     let retries = options.retries || 10
 
@@ -134,7 +134,7 @@ export class Migrate extends EventEmitter {
           return options.new ? !matches.length : true
         }
 
-        return matches.length ? matches.some(x => x.date.getTime() >= Date.now() - since) : true
+        return since == null ? true : matches.some(x => x.date.getTime() >= Date.now() - since)
       })
     }
 
