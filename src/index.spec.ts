@@ -5,7 +5,7 @@ import thenify = require('thenify')
 import * as immigration from './index'
 
 const stat = thenify(fs.stat)
-const readdir = thenify(fs.readdir)
+const readdir = thenify<string, string[]>(fs.readdir)
 const unlink = thenify(fs.unlink)
 
 const DIRECTORY = join(__dirname, '../test/migrations')

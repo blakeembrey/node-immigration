@@ -3,7 +3,7 @@
     "target": "es5",
     "outDir": "dist/",
     "module": "commonjs",
-    "lib": ["es5"],
+    "lib": ["es5", "es2015.promise"],
     "noImplicitAny": true,
     "strictNullChecks": true,
     "noImplicitReturns": true,

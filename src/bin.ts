@@ -18,6 +18,7 @@ function run (): Promise<any> {
     reverse?: boolean
     all?: boolean
     new?: boolean
+    plan?: boolean
     help?: boolean
     since?: string
     use?: immigration.PluginOptions
@@ -25,9 +26,10 @@ function run (): Promise<any> {
 
   const argv = subarg<Argv>(process.argv.slice(2), {
     string: ['begin', 'directory', 'extension', 'since'],
-    boolean: ['help', 'all', 'new', 'reverse'],
+    boolean: ['help', 'all', 'new', 'reverse', 'plan'],
     alias: {
       u: ['use'],
+      p: ['plan'],
       d: ['directory'],
       b: ['begin'],
       c: ['count'],
@@ -44,8 +46,9 @@ function run (): Promise<any> {
   const name = argv._[1] as string | undefined
   const directory = resolve(arrify(argv.directory).pop() || 'migrations')
 
-  const options: immigration.ListOptions & immigration.MigrateOptions = {
+  const options: immigration.ListOptions & immigration.PlanOptions & immigration.MigrateOptions = {
     all: argv.all,
+    plan: argv.plan,
     name: name,
     new: argv.new,
     since: argv.since,
@@ -62,6 +65,18 @@ function run (): Promise<any> {
     console.log(`${chalk.cyan('-')} ${name}`)
   })
 
+  migrate.on('planned', function (name: string) {
+    console.log(`${chalk.yellow('○')} ${name} (planned)`)
+  })
+
+  migrate.on('log', function (name: string) {
+    console.log(`${chalk.green('✔')} ${name} (logged)`)
+  })
+
+  migrate.on('unlog', function (name: string) {
+    console.log(`${chalk.green('✔')} ${name} (unlogged)`)
+  })
+
   migrate.on('pending', function (name: string) {
     logUpdate(`${chalk.yellow('○')} ${name}`)
   })
@@ -76,8 +91,8 @@ function run (): Promise<any> {
     logUpdate.done()
   })
 
-  migrate.on('retry', function (retries: number) {
-    logUpdate(`${chalk.yellow('…')} Trying to acquire lock ${retries} more ${retries === 1 ? 'time' : 'times'}`)
+  migrate.on('retry', function (count: number) {
+    logUpdate(`${chalk.yellow('…')} Attempting to acquire lock (${count})`)
   })
 
   // Generate the migration function.
@@ -87,7 +102,7 @@ function run (): Promise<any> {
         if (migrations.length) {
           console.log(`\n${chalk.green('✔')} Migration completed`)
         } else {
-          console.log(`${chalk.yellow('…')} No migrations run`)
+          console.log(`${chalk.yellow('…')} No migration required`)
         }
       })
   }
@@ -99,7 +114,7 @@ function run (): Promise<any> {
         for (const execution of executed) {
           console.log(
             `${chalk.cyan('•')} ${execution.name} ${execution.status} @ ` +
-            `${chalk.magenta(execution.date.toISOString())}`
+            `${chalk.magenta(execution.date.toLocaleString())}`
           )
         }
       })
@@ -107,38 +122,30 @@ function run (): Promise<any> {
 
   // Log a migration as done.
   function log () {
-    if (!name) {
-      throw new TypeError(`Requires the migration name to "log"`)
-    }
-
-    return migrate.log(name, 'done', new Date()).then(() => console.log(`Migration "${name}" logged as done`))
+    return migrate.log(options, 'done')
   }
 
   // Unlog a migration status.
   function unlog () {
-    if (!name) {
-      throw new TypeError(`Requires the migration name to "unlog"`)
-    }
-
-    return migrate.unlog(name).then(() => console.log(`Migration "${name}" unlogged`))
+    return migrate.unlog(options)
   }
 
   // Tidy up missing migrations from the plugin.
   function tidy () {
-    return migrate.tidy().then(() => console.log(`Migrations tidied`))
+    return migrate.tidy()
+      .then((tidied) => console.log(`Tidied ${tidied.length} ${tidied.length === 1 ? 'migration' : 'migrations'}`))
   }
 
   // Remove the current migration lock.
   function unlock () {
-    return migrate.unlock().then(() => console.log(`Manually unlocked the migration`))
+    return migrate.unlock()
+      .then(() => console.log(`Migration state unlocked`))
   }
 
   // Check if the migration is locked.
   function locked () {
     return migrate.isLocked()
-      .then((locked) => {
-        console.log(`The migration state is current ${locked ? 'locked' : 'unlocked'}`)
-      })
+      .then((locked) => console.log(`State: ${locked ? 'locked' : 'unlocked'}`))
   }
 
   // List available migrations.
@@ -190,6 +197,7 @@ Options:
   -n, --new              Execute the new migrations (used for "up" migrations) *
   -s, --since            Rollback migrations for duration (E.g. "30m") (used for "down" migrations) *
   -u, --use              Require a plugin and pass configuration options
+  -p, --plan             Execute a dry-run of the migration to verify plan
 
 Commands:
   up [name]       Run up migration scripts
@@ -197,9 +205,9 @@ Commands:
   create [title]  Create a new migration file
   list            List available migrations
   executed        List the run migrations *
-  log [name]      Mark a migration as run (without explicitly executing up) *
-  unlog [name]    Remove a migration marked as run (without explicitly executing down) *
-  tidy            Unlog unknown migration names from the plugin *
+  log [name]      Mark a migration as run (without executing up) *
+  unlog [name]    Remove a migration marked as run (without executing down) *
+  tidy            Unlogs unknown migrations from the plugin *
 
 * Requires plugin (E.g. "--use [ immigration/fs ]")
 `)

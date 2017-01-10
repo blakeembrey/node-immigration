@@ -2,9 +2,10 @@ import Promise = require('any-promise')
 import thenify = require('thenify')
 import * as fs from 'fs'
 import { join } from 'path'
+import { Encoding } from 'buffer'
 import { Plugin, PluginOptions, LockRetryError } from './index'
 
-const readFile = thenify<string, string, string>(fs.readFile)
+const readFile = thenify<string, Encoding, string>(fs.readFile)
 const writeFile = thenify<string, string, void>(fs.writeFile)
 const open = thenify<string, string, number>(fs.open)
 const close = thenify(fs.close)

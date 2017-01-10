@@ -1,6 +1,7 @@
 import fs = require('fs')
 import ms = require('ms')
 import thenify = require('thenify')
+import now = require('performance-now')
 import { EventEmitter } from 'events'
 import { resolve, join, extname, basename } from 'path'
 import Promise = require('any-promise')
@@ -11,8 +12,8 @@ import pad = require('pad-left')
 import resolveFrom = require('resolve-from')
 import promiseFinally from 'promise-finally'
 
-const touch = thenify(tch)
-const readdir = thenify(fs.readdir)
+const touch = thenify<string, void>(tch)
+const readdir = thenify<string, string[]>(fs.readdir)
 
 export interface CreateOptions {
   name?: string
@@ -39,6 +40,9 @@ export function create (options: CreateOptions = {}): Promise<void> {
   return touch(join(dir, `${prefix}${suffix}${extension}`)).then(() => undefined)
 }
 
+/**
+ * Migration options.
+ */
 export interface MigrateOptions {
   all?: boolean
   name?: string
@@ -48,24 +52,65 @@ export interface MigrateOptions {
   retryWait?: number
 }
 
+/**
+ * Enable "dry-runs" of commands.
+ */
+export interface PlanOptions {
+  plan?: boolean
+}
+
 export class Migrate extends EventEmitter {
 
   constructor (public plugin?: Plugin, public directory: string = 'migrations') {
     super()
   }
 
-  log (name: string, status: Status, date: Date) {
-    return Promise.resolve(this.plugin ? this.plugin.log(name, status, date) : undefined)
-      .then(() => {
-        this.emit('log', name)
-      })
+  log (options: ListOptions & PlanOptions = {}, status: Status): Promise<string[]> {
+    const date = new Date()
+
+    return this.list(options).then(files => {
+      return Promise.all(files.map(file => {
+        const name = toName(file)
+
+        if (options.plan) {
+          this.emit('planned', name)
+          return name
+        }
+
+        return this._log(name, status, date)
+          .then(() => {
+            this.emit('log', name)
+            return name
+          })
+      }))
+    })
   }
 
-  unlog (name: string) {
+  _log (name: string, status: Status, date: Date): Promise<void> {
+    return Promise.resolve(this.plugin ? this.plugin.log(name, status, date) : undefined)
+  }
+
+  unlog (options: ListOptions & PlanOptions = {}): Promise<string[]> {
+    return this.list(options).then(files => {
+      return Promise.all(files.map(file => {
+        const name = toName(file)
+
+        if (options.plan) {
+          this.emit('planned', name)
+          return name
+        }
+
+        return this._unlog(name)
+          .then(() => {
+            this.emit('unlog', name)
+            return name
+          })
+      }))
+    })
+  }
+
+  _unlog (name: string): Promise<void> {
     return Promise.resolve(this.plugin ? this.plugin.unlog(name) : undefined)
-      .then(() => {
-        this.emit('unlog', name)
-      })
   }
 
   lock () {
@@ -82,47 +127,101 @@ export class Migrate extends EventEmitter {
 
   executed () {
     return Promise.resolve(this.plugin ? this.plugin.executed() : [])
+      .then(x => x.sort((a, b) => a.date.getTime() - b.date.getTime()))
   }
 
-  tidy () {
+  tidy (options: PlanOptions = {}): Promise<string[]> {
     return Promise.all([this.list(), this.executed()])
       .then(([files, executed]) => {
         const names = files.map(file => toName(file))
+        const removed: string[] = []
 
-        return Promise.all(executed.map((execution) => {
+        return Promise.all<any>(executed.map((execution) => {
           const exists = names.some(name => execution.name === name)
 
           if (!exists) {
-            return this.unlog(execution.name)
+            removed.push(execution.name)
+
+            if (options.plan) {
+              this.emit('planned', execution.name)
+              return execution.name
+            }
+
+            return this._unlog(execution.name)
           }
 
           return
-        }))
+        })).then(() => removed)
       })
   }
 
-  migrate (cmd: 'up' | 'down', options: MigrateOptions & ListOptions = {}) {
+  migrate (cmd: 'up' | 'down', options: MigrateOptions & PlanOptions & ListOptions = {}) {
     const { name, count, begin, all, extension } = options
 
     if (!name && !count && !begin && !all) {
       if (this.plugin) {
-        const opt = cmd === 'up' ? 'new' : 'since'
+        const opt = cmd === 'down' ? options.since : options.new
 
-        if (!options.hasOwnProperty(opt)) {
-          return Promise.reject<string[]>(
-            new TypeError(`Requires "count", "begin", "all", "${opt}", or a migration name to run`)
-          )
+        if (opt == null) {
+          return Promise.reject<string[]>(new ImmigrationError(
+            `Requires "count", "begin", "all", "${cmd === 'down' ? 'since' : 'new'}", or a migration name to run`
+          ))
         }
       } else {
         return Promise.reject<string[]>(
-          new TypeError(`Requires "count", "begin", "all", or a migration name to run`)
+          new ImmigrationError(`Requires "count", "begin", "all", or a migration name to run`)
         )
       }
     }
 
-    const since = typeof options.since === 'string' ? ms(options.since) : undefined
     const retryWait = options.retryWait || 350
-    let retries = options.retries || 10
+    const retries = options.retries || 10
+    const since = typeof options.since === 'string' ? ms(options.since) : undefined
+
+    // Run an execution.
+    const exec = (file: string) => {
+      const start = now()
+      const date = new Date()
+      const name = toName(file)
+      const m = require(join(this.directory, file))
+      const fn = m[cmd]
+
+      // Skip missing up/down methods.
+      if (fn == null) {
+        this.emit('skipped', name)
+        return
+      }
+
+      if (typeof fn !== 'function') {
+        return Promise.reject<void>(
+          new ImmigrationError(`Migration ${cmd} is not a function: ${name}`, undefined, this.directory)
+        )
+      }
+
+      this.emit('pending', name)
+
+      return this._log(name, 'pending', date).then(() => run(fn))
+        .then(
+          () => {
+            this.emit('done', name, now() - start)
+
+            return cmd === 'down' ? this._unlog(name) : this._log(name, 'done', date)
+          },
+          (error) => {
+            this.emit('failed', name, now() - start)
+
+            return this._log(name, 'failed', date).then(() => {
+              let message = `Migration ${cmd} failed on "${name}"`
+
+              if (this.plugin) {
+                message += '\nYou will need to "unlog" this migration before trying again'
+              }
+
+              return Promise.reject(new ImmigrationError(message, error, this.directory))
+            })
+          }
+        )
+    }
 
     // Filter the list of files to only the ones we care about running.
     const filter = (files: string[], executed: Executed[]) => {
@@ -138,54 +237,10 @@ export class Migrate extends EventEmitter {
       })
     }
 
-    const exec = (file: string) => {
-      const name = toName(file)
-      const date = new Date()
-      const m = require(join(this.directory, file))
-      const fn = m[cmd]
-
-      // Skip missing up/down methods.
-      if (fn == null) {
-        this.emit('skipped', name)
-        return
-      }
-
-      if (typeof fn !== 'function') {
-        return Promise.reject<undefined>(
-          new ImmigrationError(`Migration ${cmd} is not a function: ${name}`, undefined, this.directory)
-        )
-      }
-
-      this.emit('pending', name)
-
-      return this.log(name, 'pending', date).then(() => run(fn))
-        .then(
-          () => {
-            this.emit('done', name, Date.now() - date.getTime())
-
-            return cmd === 'down' ? this.unlog(name) : this.log(name, 'done', date)
-          },
-          (error) => {
-            this.emit('failed', name, Date.now() - date.getTime())
-
-            return this.log(name, 'failed', date).then(() => {
-              let message = `Migration ${cmd} failed on "${name}"`
-
-              if (this.plugin) {
-                message += '\nYou will need to "unlog" this migration before trying again'
-              }
-
-              return Promise.reject(new ImmigrationError(message, error, this.directory))
-            })
-          }
-        )
-    }
-
-    // Run the migration.
     const migrate = (files: string[], executed: Executed[]) => {
       // Check for bad migrations before proceeding.
       for (const execution of executed) {
-        if (execution.status !== 'done') {
+        if (execution.status === 'pending') {
           return Promise.reject<string[]>(new ImmigrationError(
             `Another migration ("${execution.name}") appears to be in a "${execution.status}" state. ` +
             `Please verify your migration plugin has acquired a lock correctly`,
@@ -198,57 +253,59 @@ export class Migrate extends EventEmitter {
       const migrations = filter(files, executed)
 
       return migrations.reduce<Promise<any>>(
-        (p, file) => p.then(() => exec(file)),
+        (p, file) => p.then<any>(() => exec(file)),
         Promise.resolve()
       ).then(() => migrations)
     }
 
     // Make a migration attempt by skipping lock when possible.
-    const attempt = (files: string[]) => {
-      return this.executed()
-        .then<string[]>((executed) => {
-          // Check for bad migrations before proceeding.
-          for (const execution of executed) {
-            if (execution.status === 'failed') {
-              return Promise.reject<string[]>(new ImmigrationError(
-                `A previously executed migration ("${execution.name}") is in a "${execution.status}" state. ` +
-                `Please "unlog" to mark as resolved before continuing`,
-                undefined,
-                this.directory
-              ))
+    const attempt = (files: string[], count: number) => {
+      return this.executed().then((executed) => {
+        // Check for bad migrations before proceeding.
+        for (const execution of executed) {
+          if (execution.status === 'failed') {
+            return Promise.reject<string[]>(new ImmigrationError(
+              `A migration ("${execution.name}") is in a "${execution.status}" state. ` +
+              `Please "unlog" to mark as resolved before continuing`,
+              undefined,
+              this.directory
+            ))
+          }
+        }
+
+        const pending = filter(files, executed)
+
+        // Return early when no executions or "planning".
+        if (options.plan || pending.length === 0) {
+          for (const file of pending) {
+            this.emit('planned', toName(file))
+          }
+
+          return pending
+        }
+
+        const promise = this.lock()
+          .then(() => this.executed())
+          .then((executed) => migrate(files, executed))
+
+        return promiseFinally(promise, () => this.unlock())
+          .catch((error) => {
+            // Allow lock retries. This is useful as we will re-attempt which
+            // may no longer require any migrations to lock to run.
+            if (error instanceof LockRetryError && count < retries) {
+              return new Promise((resolve) => {
+                this.emit('retry', count + 1)
+
+                setTimeout(() => resolve(attempt(files, count + 1)), retryWait)
+              })
             }
-          }
 
-          const pending = filter(files, executed)
-
-          // Skip the lock and migration step when there's no pending migrations.
-          if (!pending.length) {
-            return pending
-          }
-
-          const promise = this.lock()
-            .then(() => this.executed())
-            .then((executed) => migrate(files, executed))
-
-          return promiseFinally(promise, () => this.unlock())
-            .catch((error) => {
-              // Allow lock retries. This is useful as we will re-attempt which
-              // may no longer require any migrations to lock to run.
-              if (error instanceof LockRetryError && retries-- > 0) {
-                return new Promise((resolve) => {
-                  this.emit('retry', retries)
-
-                  setTimeout(() => resolve(attempt(files)), retryWait)
-                })
-              }
-
-              return Promise.reject<undefined>(error)
-            })
-        })
+            return Promise.reject<undefined>(error)
+          })
+      })
     }
 
-    return this.list({ reverse: cmd === 'down', name, begin, count, extension })
-      .then((files) => attempt(files))
+    return this.list({ reverse: cmd === 'down', name, begin, count, extension }).then((files) => attempt(files, 0))
   }
 
   list (options?: ListOptions) {
