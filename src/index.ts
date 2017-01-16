@@ -69,20 +69,23 @@ export class Migrate extends EventEmitter {
     const date = new Date()
 
     return this.list(options).then(files => {
-      return Promise.all(files.map(file => {
-        const name = toName(file)
+      return files.reduce<Promise<any>>(
+        (p, file) => p.then<any>((names) => {
+          const name = toName(file)
 
-        if (options.plan) {
-          this.emit('planned', name)
-          return name
-        }
+          if (options.plan) {
+            this.emit('planned', name)
+            return names.concat(name)
+          }
 
-        return this._log(name, status, date)
-          .then(() => {
-            this.emit('log', name)
-            return name
-          })
-      }))
+          return this._log(name, status, date)
+            .then(() => {
+              this.emit('log', name)
+              return names.concat(name)
+            })
+        }),
+        Promise.resolve([])
+      )
     })
   }
 
@@ -92,20 +95,23 @@ export class Migrate extends EventEmitter {
 
   unlog (options: ListOptions & PlanOptions = {}): Promise<string[]> {
     return this.list(options).then(files => {
-      return Promise.all(files.map(file => {
-        const name = toName(file)
+      return files.reduce<Promise<any>>(
+        (p, file) => p.then<any>((names) => {
+          const name = toName(file)
 
-        if (options.plan) {
-          this.emit('planned', name)
-          return name
-        }
+          if (options.plan) {
+            this.emit('planned', name)
+            return names.concat(name)
+          }
 
-        return this._unlog(name)
-          .then(() => {
-            this.emit('unlog', name)
-            return name
-          })
-      }))
+          return this._unlog(name)
+            .then(() => {
+              this.emit('unlog', name)
+              return names.concat(name)
+            })
+        }),
+        Promise.resolve([])
+      )
     })
   }
 
@@ -136,22 +142,25 @@ export class Migrate extends EventEmitter {
         const names = files.map(file => toName(file))
         const removed: string[] = []
 
-        return Promise.all<any>(executed.map((execution) => {
-          const exists = names.some(name => execution.name === name)
+        return executed.reduce<Promise<any>>(
+          (p, execution) => p.then<any>(() => {
+            const exists = names.some(name => execution.name === name)
 
-          if (!exists) {
-            removed.push(execution.name)
+            if (!exists) {
+              removed.push(execution.name)
 
-            if (options.plan) {
-              this.emit('planned', execution.name)
-              return execution.name
+              if (options.plan) {
+                this.emit('planned', execution.name)
+                return execution.name
+              }
+
+              return this._unlog(execution.name)
             }
 
-            return this._unlog(execution.name)
-          }
-
-          return
-        })).then(() => removed)
+            return
+          }),
+          Promise.resolve()
+        ).then(() => removed)
       })
   }
 

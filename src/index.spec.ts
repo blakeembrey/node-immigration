@@ -75,6 +75,18 @@ test('immigration', t => {
         })
     })
 
+    t.test('log', t => {
+      t.plan(1)
+
+      return migrate.log({}, 'done')
+        .then(() => migrate.migrate('up', {
+          new: true
+        }))
+        .then(() => {
+          return stat(SUCCESS_FILE).catch(() => t.pass('file is still removed'))
+        })
+    })
+
     t.test('cleanup', t => {
       return unlink(join(DIRECTORY, '.migrate.json'))
     })
