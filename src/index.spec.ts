@@ -75,7 +75,7 @@ test('immigration', t => {
         })
     })
 
-    t.test('cleanup', t => {
+    t.test('cleanup', () => {
       return unlink(join(DIRECTORY, '.migrate.json'))
     })
   })
@@ -85,7 +85,7 @@ test('immigration', t => {
       name: 'foobar',
       directory: DIRECTORY
     })
-      .then(result => {
+      .then(() => {
         return readdir(DIRECTORY)
       })
       .then(files => {

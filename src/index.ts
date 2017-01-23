@@ -48,6 +48,12 @@ export interface MigrateOptions {
   name?: string
   new?: boolean
   since?: string
+}
+
+/**
+ * Lock acquisition options.
+ */
+export interface AcquireOptions {
   retries?: number
   retryWait?: number
 }
@@ -65,24 +71,32 @@ export class Migrate extends EventEmitter {
     super()
   }
 
-  log (options: ListOptions & PlanOptions = {}, status: Status): Promise<string[]> {
+  log (options: ListOptions & PlanOptions = {}, status: Status): Promise<string[] | undefined> {
     const date = new Date()
 
     return this.list(options).then(files => {
-      return Promise.all(files.map(file => {
-        const name = toName(file)
+      return this.acquire(
+        () => {
+          return Promise.all(files.map(file => {
+            const name = toName(file)
 
-        if (options.plan) {
-          this.emit('planned', name)
-          return name
+            return this._log(name, status, date)
+              .then(() => {
+                this.emit('log', name)
+                return name
+              })
+          }))
+        },
+        () => {
+          if (options.plan) {
+            files.forEach(file => this.emit('planned', toName(file)))
+
+            return false
+          }
+
+          return files.length > 0
         }
-
-        return this._log(name, status, date)
-          .then(() => {
-            this.emit('log', name)
-            return name
-          })
-      }))
+      )
     })
   }
 
@@ -90,22 +104,31 @@ export class Migrate extends EventEmitter {
     return Promise.resolve(this.plugin ? this.plugin.log(name, status, date) : undefined)
   }
 
-  unlog (options: ListOptions & PlanOptions = {}): Promise<string[]> {
+  unlog (options: ListOptions & PlanOptions & AcquireOptions = {}): Promise<string[] | undefined> {
     return this.list(options).then(files => {
-      return Promise.all(files.map(file => {
-        const name = toName(file)
+      return this.acquire(
+        () => {
+          return Promise.all(files.map(file => {
+            const name = toName(file)
 
-        if (options.plan) {
-          this.emit('planned', name)
-          return name
-        }
+            return this._unlog(name)
+              .then(() => {
+                this.emit('unlog', name)
+                return name
+              })
+          }))
+        },
+        () => {
+          if (options.plan) {
+            files.forEach(file => this.emit('planned', toName(file)))
 
-        return this._unlog(name)
-          .then(() => {
-            this.emit('unlog', name)
-            return name
-          })
-      }))
+            return false
+          }
+
+          return files.length > 0
+        },
+        options
+      )
     })
   }
 
@@ -130,32 +153,46 @@ export class Migrate extends EventEmitter {
       .then(x => x.sort((a, b) => a.date.getTime() - b.date.getTime()))
   }
 
-  tidy (options: PlanOptions = {}): Promise<string[]> {
-    return Promise.all([this.list(), this.executed()])
-      .then(([files, executed]) => {
-        const names = files.map(file => toName(file))
-        const removed: string[] = []
+  tidy (options: PlanOptions & AcquireOptions = {}): Promise<string[] | undefined> {
+    const filter = (files: string[], executed: Executed[]) => {
+      const names = files.map(x => toName(x))
 
-        return Promise.all<any>(executed.map((execution) => {
-          const exists = names.some(name => execution.name === name)
+      return executed.map(x => x.name).filter(x => names.indexOf(x) === -1)
+    }
 
-          if (!exists) {
-            removed.push(execution.name)
+    return this.list().then(files => {
+      return this.acquire(
+        () => {
+          return this.executed().then((executed) => {
+            const missing = filter(files, executed)
+
+            return Promise.all(missing.map(name => {
+              return this._unlog(name).then(() => name)
+            }))
+          })
+        },
+        () => {
+          return this.executed().then((executed) => {
+            const missing = filter(files, executed)
 
             if (options.plan) {
-              this.emit('planned', execution.name)
-              return execution.name
+              missing.forEach(name => this.emit('planned', name))
+
+              return false
             }
 
-            return this._unlog(execution.name)
-          }
-
-          return
-        })).then(() => removed)
-      })
+            return missing.length > 0
+          })
+        },
+        options
+      )
+    })
   }
 
-  migrate (cmd: 'up' | 'down', options: MigrateOptions & PlanOptions & ListOptions = {}) {
+  migrate (
+    cmd: 'up' | 'down',
+    options: MigrateOptions & PlanOptions & ListOptions & AcquireOptions = {}
+  ): Promise<string[] | undefined> {
     const { name, count, begin, all, extension } = options
 
     if (!name && !count && !begin && !all) {
@@ -174,8 +211,6 @@ export class Migrate extends EventEmitter {
       }
     }
 
-    const retryWait = options.retryWait || 350
-    const retries = options.retries || 10
     const since = typeof options.since === 'string' ? ms(options.since) : undefined
 
     // Run an execution.
@@ -258,54 +293,80 @@ export class Migrate extends EventEmitter {
       ).then(() => migrations)
     }
 
-    // Make a migration attempt by skipping lock when possible.
-    const attempt = (files: string[], count: number) => {
-      return this.executed().then((executed) => {
-        // Check for bad migrations before proceeding.
-        for (const execution of executed) {
-          if (execution.status === 'failed') {
-            return Promise.reject<string[]>(new ImmigrationError(
-              `A migration ("${execution.name}") is in a "${execution.status}" state. ` +
-              `Please "unlog" to mark as resolved before continuing`,
-              undefined,
-              this.directory
-            ))
-          }
+    return this.list({ reverse: cmd === 'down', name, begin, count, extension })
+      .then((files) => {
+        return this.acquire(
+          () => this.executed().then((executed) => migrate(files, executed)),
+          () => {
+            return this.executed().then((executed) => {
+              // Check for bad migrations before proceeding.
+              for (const execution of executed) {
+                if (execution.status === 'failed') {
+                  return Promise.reject<boolean>(new ImmigrationError(
+                    `A migration ("${execution.name}") is in a "${execution.status}" state. ` +
+                    `Please "unlog" to mark as resolved before continuing`,
+                    undefined,
+                    this.directory
+                  ))
+                }
+              }
+
+              const pending = filter(files, executed)
+
+              if (options.plan) {
+                for (const file of pending) {
+                  this.emit('planned', toName(file))
+                }
+
+                return false
+              }
+
+              return pending.length > 0
+            })
+          },
+          options
+        )
+      })
+  }
+
+  acquire <T> (
+    fn: () => Promise<T>,
+    shouldRetry: () => Promise<boolean> | boolean,
+    options: AcquireOptions = {}
+  ): Promise<T | undefined> {
+    const retries = options.retries || 10
+    const retryWait = options.retryWait || 350
+
+    const attempt = (count: number) => {
+      const p = new Promise<boolean>(resolve => resolve(shouldRetry()))
+
+      return p.then<T | Promise<T> | undefined>((retry) => {
+        if (!retry) {
+          return
         }
 
-        const pending = filter(files, executed)
+        return this.lock().then(() => {
+          const p = new Promise(resolve => resolve(fn()))
 
-        // Return early when no executions or "planning".
-        if (options.plan || pending.length === 0) {
-          for (const file of pending) {
-            this.emit('planned', toName(file))
-          }
+          return promiseFinally(p, () => this.unlock())
+            .catch((error) => {
+              // Allow lock retries. This is useful as we will re-attempt which
+              // may no longer require any migrations to lock to run.
+              if (error instanceof LockRetryError && count < retries) {
+                return new Promise((resolve) => {
+                  this.emit('retry', count + 1, retries)
 
-          return pending
-        }
+                  setTimeout(() => resolve(attempt(count + 1)), retryWait)
+                })
+              }
 
-        const promise = this.lock()
-          .then(() => this.executed())
-          .then((executed) => migrate(files, executed))
-
-        return promiseFinally(promise, () => this.unlock())
-          .catch((error) => {
-            // Allow lock retries. This is useful as we will re-attempt which
-            // may no longer require any migrations to lock to run.
-            if (error instanceof LockRetryError && count < retries) {
-              return new Promise((resolve) => {
-                this.emit('retry', count + 1)
-
-                setTimeout(() => resolve(attempt(files, count + 1)), retryWait)
-              })
-            }
-
-            return Promise.reject<undefined>(error)
-          })
+              return Promise.reject<T>(error)
+            })
+        })
       })
     }
 
-    return this.list({ reverse: cmd === 'down', name, begin, count, extension }).then((files) => attempt(files, 0))
+    return attempt(0)
   }
 
   list (options?: ListOptions) {
