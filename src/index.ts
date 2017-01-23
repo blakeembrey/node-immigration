@@ -45,7 +45,6 @@ export function create (options: CreateOptions = {}): Promise<void> {
  */
 export interface MigrateOptions {
   all?: boolean
-  name?: string
   new?: boolean
   since?: string
 }
@@ -193,24 +192,9 @@ export class Migrate extends EventEmitter {
     cmd: 'up' | 'down',
     options: MigrateOptions & PlanOptions & ListOptions & AcquireOptions = {}
   ): Promise<string[] | undefined> {
-    const { name, count, begin, all, extension } = options
+    const { name, count, begin, extension } = options
 
-    if (!name && !count && !begin && !all) {
-      if (this.plugin) {
-        const opt = cmd === 'down' ? options.since : options.new
-
-        if (opt == null) {
-          return Promise.reject<string[]>(new ImmigrationError(
-            `Requires "count", "begin", "all", "${cmd === 'down' ? 'since' : 'new'}", or a migration name to run`
-          ))
-        }
-      } else {
-        return Promise.reject<string[]>(
-          new ImmigrationError(`Requires "count", "begin", "all", or a migration name to run`)
-        )
-      }
-    }
-
+    const all = !!options.all || (cmd === 'down' ? !!options.since : !!options.new)
     const since = typeof options.since === 'string' ? ms(options.since) : undefined
 
     // Run an execution.
@@ -293,7 +277,7 @@ export class Migrate extends EventEmitter {
       ).then(() => migrations)
     }
 
-    return this.list({ reverse: cmd === 'down', name, begin, count, extension })
+    return this.list({ reverse: cmd === 'down', all, name, begin, count, extension })
       .then((files) => {
         return this.acquire(
           () => this.executed().then((executed) => migrate(files, executed)),
@@ -386,6 +370,7 @@ export function toName (path: string): string {
  * Expose options.
  */
 export interface ListOptions {
+  all?: boolean
   name?: string
   begin?: string
   count?: number
@@ -398,6 +383,12 @@ export interface ListOptions {
  */
 export function list (path: string, options: ListOptions = {}): Promise<string[]> {
   const extensions = arrify(options.extension)
+
+  if (!options.name && !options.count && !options.begin && !options.all) {
+    return Promise.reject<string[]>(
+      new ImmigrationError(`Specify list options to filter migrations or use "all"`)
+    )
+  }
 
   if (extensions.length === 0) {
     extensions.push('.js')
@@ -467,7 +458,7 @@ export function createPlugin (options: PluginOptions, cwd: string): Plugin {
 /**
  * Execute a function with callback support.
  */
-function run (fn: (cb?: (err?: any) => any) => any): Promise<any> {
+function run (fn: (cb?: (err?: Error, res?: any) => any) => any): Promise<any> {
   if (fn.length === 1) {
     fn = thenify(fn)
   }
@@ -531,10 +522,10 @@ export type Status = 'pending' | 'failed' | 'done'
  * Expose the required methods for migration.
  */
 export interface Plugin {
-  executed (): Promise<Executed[]>
-  lock (): Promise<any>
-  unlock (): Promise<any>
-  isLocked (): Promise<boolean>
-  log (name: string, status: Status, date: Date): Promise<any>
-  unlog (name: string): Promise<any>
+  executed (): Executed[] | Promise<Executed[]>
+  lock (): void | Promise<void>
+  unlock (): void | Promise<void>
+  isLocked (): boolean | Promise<boolean>
+  log (name: string, status: Status, date: Date): void | Promise<void>
+  unlog (name: string): void | Promise<void>
 }

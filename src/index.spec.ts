@@ -75,6 +75,34 @@ test('immigration', t => {
         })
     })
 
+    t.test('race conditions', t => {
+      t.plan(1)
+
+      return Promise.all([
+        migrate._log('a', 'done', new Date()),
+        migrate._log('b', 'done', new Date()),
+        migrate._log('c', 'done', new Date())
+      ])
+        .then(() => {
+          return migrate.executed()
+        })
+        .then((executed) => {
+          t.equal(executed.length, 3)
+        })
+    })
+
+    t.test('log', t => {
+      t.plan(1)
+
+      return migrate.log({ all: true }, 'done')
+        .then(() => {
+          return migrate.migrate('up', { new: true })
+        })
+        .then(() => {
+          return stat(SUCCESS_FILE).catch(() => t.pass('file is still removed'))
+        })
+    })
+
     t.test('cleanup', () => {
       return unlink(join(DIRECTORY, '.migrate.json'))
     })
