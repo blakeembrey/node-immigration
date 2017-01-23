@@ -1,6 +1,6 @@
 {
   "name": "immigration",
-  "version": "2.2.0",
+  "version": "2.3.0",
   "description": "Simple, no-frills migration utility",
   "main": "dist/index.js",
   "bin": {
