@@ -46,7 +46,7 @@ function run (): Promise<any> {
   const name = argv._[1] as string | undefined
   const directory = resolve(arrify(argv.directory).pop() || 'migrations')
 
-  const options: immigration.ListOptions & immigration.PlanOptions & immigration.MigrateOptions = {
+  const options: immigration.ListOptions & immigration.PlanOptions & immigration.MigrateOptions & immigration.AcquireOptions = {
     all: argv.all,
     plan: argv.plan,
     name: name,
@@ -91,18 +91,18 @@ function run (): Promise<any> {
     logUpdate.done()
   })
 
-  migrate.on('retry', function (count: number) {
-    logUpdate(`${chalk.yellow('…')} Attempting to acquire lock (${count})`)
+  migrate.on('retry', function (count: number, total: number) {
+    console.log(`${chalk.yellow('…')} Attempting to acquire lock (${count} of ${total})`)
   })
 
   // Generate the migration function.
   function migration (direction: 'up' | 'down') {
     return migrate.migrate(direction, options)
       .then((migrations) => {
-        if (migrations.length) {
-          console.log(`\n${chalk.green('✔')} Migration completed`)
+        if (migrations) {
+          console.log(`\n${chalk.green('✔')} Migrations finished`)
         } else {
-          console.log(`${chalk.yellow('…')} No migration required`)
+          console.log(`${chalk.yellow('…')} No migrations required`)
         }
       })
   }
@@ -133,7 +133,13 @@ function run (): Promise<any> {
   // Tidy up missing migrations from the plugin.
   function tidy () {
     return migrate.tidy()
-      .then((tidied) => console.log(`Tidied ${tidied.length} ${tidied.length === 1 ? 'migration' : 'migrations'}`))
+      .then((tidied) => {
+        if (tidied) {
+          console.log(`Tidied ${tidied.length} ${tidied.length === 1 ? 'migration' : 'migrations'}`)
+        } else {
+          console.log(`${chalk.green('✔')} No tidy required`)
+        }
+      })
   }
 
   // Remove the current migration lock.
