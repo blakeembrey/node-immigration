@@ -8,7 +8,7 @@ import { Plugin, PluginOptions, LockRetryError } from './index'
 const readFile = thenify<string, Encoding, string>(fs.readFile)
 const writeFile = thenify<string, string, void>(fs.writeFile)
 const open = thenify<string, string, number>(fs.open)
-const close = thenify(fs.close)
+const close = thenify<number, void>(fs.close)
 const unlink = thenify(fs.unlink)
 const stat = thenify(fs.stat)
 
@@ -32,8 +32,17 @@ export interface FileJson {
 export function init (options: Options, dir: string): Plugin {
   const path = join(dir, options.path || '.migrate.json')
   const lockfile = `${path}.lock`
+  let pending = Promise.resolve()
 
-  function read (path: string) {
+  function update (fn: (file: FileJson) => FileJson) {
+    pending = pending.then(() => {
+      return read().then(contents => writeFile(path, JSON.stringify(fn(contents), null, 2)))
+    })
+
+    return pending
+  }
+
+  function read () {
     return readFile(path, 'utf8').then(
       (contents) => JSON.parse(contents) as FileJson,
       () => ({} as FileJson)
@@ -41,18 +50,18 @@ export function init (options: Options, dir: string): Plugin {
   }
 
   function log (name: string, status: string, date: Date) {
-    return read(path).then((file: FileJson) => {
-      file[name] = { status, date: date.toISOString() }
+    return update((contents) => {
+      contents[name] = { status, date: date.toISOString() }
 
-      return writeFile(path, JSON.stringify(file, null, 2))
+      return contents
     })
   }
 
   function unlog (name: string) {
-    return read(path).then((file: FileJson) => {
-      delete file[name]
+    return update((contents) => {
+      delete contents[name]
 
-      return writeFile(path, JSON.stringify(file, null, 2))
+      return contents
     })
   }
 
@@ -89,7 +98,7 @@ export function init (options: Options, dir: string): Plugin {
   }
 
   function executed () {
-    return read(path).then((file: FileJson) => {
+    return read().then((file: FileJson) => {
       return Object.keys(file).map((key) => {
         return {
           name: key,
