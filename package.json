@@ -64,6 +64,6 @@
     "resolve-from": "^3.0.0",
     "subarg": "^1.0.0",
     "thenify": "^3.1.1",
-    "touch": "^1.0.0"
+    "touch": "^2.0.0"
   }
 }
