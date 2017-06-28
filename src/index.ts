@@ -22,6 +22,28 @@ export interface CreateOptions {
 }
 
 /**
+ * Errors caused during migration.
+ */
+export class ImmigrationError extends BaseError {
+  name = 'ImmigrationError'
+
+  constructor (msg: string, cause?: Error, public path?: string) {
+    super(msg, cause)
+  }
+}
+
+/**
+ * Create a "retry lock" error.
+ */
+export class LockRetryError extends BaseError {
+  name = 'LockRetryError'
+
+  constructor (cause?: Error) {
+    super('Failed to acquire migration lock', cause)
+  }
+}
+
+/**
  * Create a new migration file.
  */
 export function create (options: CreateOptions = {}): Promise<void> {
@@ -208,7 +230,7 @@ export class Migrate extends EventEmitter {
       // Skip missing up/down methods.
       if (fn == null) {
         this.emit('skipped', name)
-        return
+        return undefined
       }
 
       if (typeof fn !== 'function') {
@@ -252,7 +274,7 @@ export class Migrate extends EventEmitter {
           return options.new ? !matches.length : true
         }
 
-        return since == null ? true : matches.some(x => x.date.getTime() >= Date.now() - since)
+        return since === undefined ? true : matches.some(x => x.date.getTime() >= Date.now() - since)
       })
     }
 
@@ -324,20 +346,18 @@ export class Migrate extends EventEmitter {
     const attempt = (count: number) => {
       const p = new Promise<boolean>(resolve => resolve(shouldRetry()))
 
-      return p.then<T | Promise<T> | undefined>((retry) => {
-        if (!retry) {
-          return
-        }
+      return p.then<T | undefined>((retry) => {
+        if (!retry) return undefined
 
         return this.lock().then(() => {
           const p = new Promise(resolve => resolve(fn()))
 
-          return promiseFinally(p, () => this.unlock())
+          return promiseFinally<T>(p, () => this.unlock())
             .catch((error) => {
               // Allow lock retries. This is useful as we will re-attempt which
               // may no longer require any migrations to lock to run.
               if (error instanceof LockRetryError && count < retries) {
-                return new Promise((resolve) => {
+                return new Promise<T | undefined>((resolve) => {
                   this.emit('retry', count + 1, retries)
 
                   setTimeout(() => resolve(attempt(count + 1)), retryWait)
@@ -465,28 +485,6 @@ function run (fn: (cb?: (err?: Error, res?: any) => any) => any): Promise<any> {
 
   // Handle errors thrown by `fn`.
   return new Promise(resolve => resolve(fn()))
-}
-
-/**
- * Errors caused during migration.
- */
-export class ImmigrationError extends BaseError {
-  name = 'ImmigrationError'
-
-  constructor (msg: string, cause?: Error, public path?: string) {
-    super(msg, cause)
-  }
-}
-
-/**
- * Create a "retry lock" error.
- */
-export class LockRetryError extends BaseError {
-  name = 'LockRetryError'
-
-  constructor (cause?: Error) {
-    super('Failed to acquire migration lock', cause)
-  }
 }
 
 /**

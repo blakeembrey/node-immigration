@@ -3,7 +3,7 @@ import thenify = require('thenify')
 import * as fs from 'fs'
 import { join } from 'path'
 import { Encoding } from 'buffer'
-import { Plugin, PluginOptions, LockRetryError } from './index'
+import { Plugin, PluginOptions, LockRetryError, Executed, Status } from './index'
 
 const readFile = thenify<string, Encoding, string>(fs.readFile)
 const writeFile = thenify<string, string, void>(fs.writeFile)
@@ -23,7 +23,10 @@ export interface Options extends PluginOptions {
  * Format of the JSON storage file.
  */
 export interface FileJson {
-  [name: string]: { status: string, date: string }
+  [name: string]: {
+    status: Status
+    date: string
+  }
 }
 
 /**
@@ -49,7 +52,7 @@ export function init (options: Options, dir: string): Plugin {
     )
   }
 
-  function log (name: string, status: string, date: Date) {
+  function log (name: string, status: Status, date: Date) {
     return update((contents) => {
       contents[name] = { status, date: date.toISOString() }
 
@@ -99,7 +102,7 @@ export function init (options: Options, dir: string): Plugin {
 
   function executed () {
     return read().then((file: FileJson) => {
-      return Object.keys(file).map((key) => {
+      return Object.keys(file).map((key): Executed => {
         return {
           name: key,
           status: file[key].status,

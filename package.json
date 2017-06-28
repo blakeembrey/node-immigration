@@ -12,7 +12,7 @@
     "LICENSE"
   ],
   "scripts": {
-    "lint": "tslint \"src/**/*.ts\"",
+    "lint": "tslint \"src/**/*.ts\" --project tsconfig.json --type-check",
     "build": "rm -rf dist/ && tsc",
     "test-spec": "blue-tape \"dist/**/*.spec.js\"",
     "test-cov": "istanbul cover --print none -x \"*.spec.js\" blue-tape -- \"dist/**/*.spec.js\" | tap-spec",
