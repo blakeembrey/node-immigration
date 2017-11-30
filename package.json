@@ -57,7 +57,7 @@
     "chalk": "^2.0.0",
     "log-update": "^2.0.0",
     "make-error-cause": "^1.2.1",
-    "ms": "^2.0.0",
+    "ms": "^2.1.1",
     "pad-left": "^2.0.0",
     "performance-now": "^2.0.0",
     "promise-finally": "^3.0.0",
