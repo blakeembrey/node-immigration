@@ -1,0 +1,59 @@
+{
+  "name": "immigration",
+  "version": "2.3.0",
+  "publishConfig": {
+    "access": "public"
+  },
+  "description": "Simple, no-frills migration utility",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git://github.com/blakeembrey/node-immigration.git"
+  },
+  "author": {
+    "name": "Blake Embrey",
+    "email": "hello@blakeembrey.com",
+    "url": "http://blakeembrey.me"
+  },
+  "homepage": "https://github.com/blakeembrey/node-immigration",
+  "bugs": {
+    "url": "https://github.com/blakeembrey/node-immigration/issues"
+  },
+  "main": "dist/index.js",
+  "bin": {
+    "immigration": "dist/bin.js"
+  },
+  "scripts": {
+    "format": "ts-scripts format",
+    "lint": "ts-scripts lint",
+    "prepare": "ts-scripts build",
+    "specs": "ts-scripts specs",
+    "test": "ts-scripts test"
+  },
+  "files": [
+    "dist/"
+  ],
+  "keywords": [
+    "migrate",
+    "migration",
+    "database",
+    "deploy",
+    "update",
+    "script"
+  ],
+  "dependencies": {
+    "@servie/events": "^2.0.1",
+    "arg": "^5.0.0",
+    "chalk": "^4.1.0",
+    "iterative": "^1.9.2",
+    "make-error-cause": "^2.3.0",
+    "ms": "^2.0.0",
+    "pad-left": "^2.0.0",
+    "performance-now": "^2.0.0",
+    "touch": "^3.0.0"
+  },
+  "devDependencies": {
+    "@types/ms": "^0.7.31",
+    "@types/pad-left": "^2.1.0"
+  }
+}

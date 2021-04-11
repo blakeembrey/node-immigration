@@ -1,19 +1,13 @@
 {
+  "extends": "@borderless/ts-scripts/configs/tsconfig.json",
   "compilerOptions": {
-    "target": "es5",
-    "outDir": "dist/",
-    "module": "commonjs",
-    "lib": ["es5", "es2015.promise"],
-    "noImplicitAny": true,
-    "strictNullChecks": true,
-    "noImplicitReturns": true,
-    "noImplicitThis": true,
-    "noUnusedLocals": true,
-    "noUnusedParameters": true,
-    "removeComments": true,
-    "declaration": true,
-    "sourceMap": true,
-    "inlineSources": true,
-    "newLine": "LF"
-  }
+    "composite": true,
+    "module": "CommonJS",
+    "types": ["node", "jest"],
+    "baseUrl": "./packages",
+    "paths": {
+      "*": ["./*/src/index.ts"]
+    }
+  },
+  "include": []
 }

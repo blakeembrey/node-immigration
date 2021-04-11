@@ -13,9 +13,29 @@
 npm install -g immigration
 ```
 
-## Packages
+## Usage
 
-- [Immigration](packages/immigration)
+From `immigration --help`:
+
+```
+immigration [options] [command]
+
+Options:
+  --store [plugin]    Loads a plugin for state storage (default: "fs")
+  --directory [dir]   Directory to read migrations from
+  --extension [ext]   Specify the default extension to support
+
+Commands:
+  up        Run up migration scripts
+  down      Run down migration scripts
+  create    Create a new migration file
+  list      List available migrations
+  history   List the run migrations
+  force     Force a migration to be valid
+  remove    Remove a migration
+```
+
+Migration files should export two functions: `up` and `down`. These functions can return a promise for asynchronous actions.
 
 ## License
 
