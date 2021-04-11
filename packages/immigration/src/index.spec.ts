@@ -41,9 +41,13 @@ describe("list", () => {
 describe("with no migrations", () => {
   beforeEach(async () => {
     const files = await getFiles();
-    await Promise.all(files.map((file) => fs.rm(join(OUT_DIRECTORY, file))));
+    await Promise.all(
+      files.map((file) => fs.unlink(join(OUT_DIRECTORY, file)))
+    );
 
-    await fs.rm(join(process.cwd(), ".migrate.json"), { force: true });
+    try {
+      await fs.unlink(join(process.cwd(), ".migrate.json"));
+    } catch {}
   });
 
   it("should migrate up", async () => {
