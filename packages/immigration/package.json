@@ -55,5 +55,10 @@
   "devDependencies": {
     "@types/ms": "^0.7.31",
     "@types/pad-left": "^2.1.0"
+  },
+  "ts-scripts": {
+    "project": [
+      "tsconfig.build.json"
+    ]
   }
 }
