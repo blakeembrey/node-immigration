@@ -42,7 +42,7 @@
     "script"
   ],
   "dependencies": {
-    "@servie/events": "^2.0.1",
+    "@servie/events": "^3.0.0",
     "arg": "^5.0.0",
     "chalk": "^4.1.0",
     "iterative": "^1.9.2",
