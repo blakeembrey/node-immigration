@@ -70,7 +70,7 @@ export interface MigrateOptions extends AcquireOptions {
    * Set to `1` to consider only the "latest" state.
    */
   check?: number;
-  /** The migration to migrate down to. */
+  /** The migration name to migrate to. */
   to?: string;
   /** Migrate all the way to the last version available. */
   all?: boolean;

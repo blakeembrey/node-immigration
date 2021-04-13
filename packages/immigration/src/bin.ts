@@ -35,6 +35,7 @@ const MIGRATE_ARG_SPEC = {
   "--to": String,
   "--all": Boolean,
   "--check": Number,
+  "--wait": String,
   "-d": "--dry-run",
 };
 
@@ -124,6 +125,7 @@ Commands:
       "--to": to,
       "--all": all,
       "--check": check,
+      "--wait": wait,
     } = arg(MIGRATE_ARG_SPEC, { argv });
 
     if (help) {
@@ -137,14 +139,17 @@ Options:
   --all          Run all the migrations without specifying \`--to\`
   --dry-run      Only preview the migrations, do not run them
   --check [int]  The number of past migrations to validate exist before proceeding
+  --wait         Maximum duration to wait for lock to be acquired
 `);
     }
 
+    const maxWait = wait ? ms(wait) : undefined;
     const migrations = await migrate.migrate(direction, {
       dryRun,
       to,
       all,
       check,
+      maxWait,
     });
 
     if (migrations.length) {
